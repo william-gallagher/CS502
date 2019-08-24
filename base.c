@@ -134,6 +134,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
     short call_type;
     static short do_print = 10;
     short i;
+    MEMORY_MAPPED_IO mmio;
 
     call_type = (short) SystemCallData->SystemCallNumber;
     if (do_print > 0) {
@@ -146,6 +147,27 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
         }
         do_print--;
     }
+    switch(call_type){
+      
+    case SYSNUM_GET_TIME_OF_DAY:
+      mmio.Mode = Z502ReturnValue;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+      MEM_READ(Z502Clock, &mmio);
+      *(long *)SystemCallData->Argument[0] = mmio.Field1;
+      break;
+
+    case SYSNUM_TERMINATE_PROCESS:
+      mmio.Mode = Z502Action;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+      MEM_WRITE(Z502Halt, &mmio);
+      break;
+
+    default:
+      printf("ERROR! call_type is not recognized!\n");
+      printf("Call_type is - %i\n", call_type);
+
+    }//end switch
+      
 }                                               // End of svc
 
 /************************************************************************
