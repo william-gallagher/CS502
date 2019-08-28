@@ -32,6 +32,9 @@
 #include             <stdlib.h>
 #include             <ctype.h>
 
+//My includes
+#include "process.h"
+
 
 //  This is a mapping of system call nmemonics with definitions
 
@@ -156,6 +159,19 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       *(long *)SystemCallData->Argument[0] = mmio.Field1;
       break;
 
+    case SYSNUM_GET_PROCESS_ID:
+			
+      //my best guess of what to do
+      // mmio.Mode = Z502ReturnValue;
+      // mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+
+      getProcessID(SystemCallData);
+      
+      //code that should get a Process ID number from PCB
+      // *(long *)SystemCallData->Argument[1] = 20; 	//just set to 20
+      // *(long *)SystemCallData->Argument[2] = 0;    //set to zero to prevent errors
+      break;
+
     case SYSNUM_TERMINATE_PROCESS:
       mmio.Mode = Z502Action;
       mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
@@ -232,6 +248,8 @@ void osInit(int argc, char *argv[]) {
     //  Look at this carefully - this is an example of how you will start
     //     all of the other tests.
 
+    PCB = CreatePCB();
+    
     if ((argc > 1) && (strcmp(argv[1], "sample") == 0)) {
         mmio.Mode = Z502InitializeContext;
         mmio.Field1 = 0;
@@ -245,6 +263,23 @@ void osInit(int argc, char *argv[]) {
         MEM_WRITE(Z502Context, &mmio);     // Start up the context
 
     } // End of handler for sample code - This routine should never return here
+        if ((argc > 1) && (strcmp(argv[1], "test1") == 0)) {
+        mmio.Mode = Z502InitializeContext;
+        mmio.Field1 = 0;
+        mmio.Field2 = (long) test1;
+        mmio.Field3 = (long) PageTable;
+
+        MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
+	//not sure where to call osCreateProcess
+	osCreateProcess(argv[1], mmio.Field1);
+	
+        mmio.Mode = Z502StartContext;
+        // Field1 contains the value of the context returned in the last call
+        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+        MEM_WRITE(Z502Context, &mmio);     // Start up the context
+
+    } // End of handler for test1 code - This routine should never return here
+	
     //  By default test0 runs if no arguments are given on the command line
     //  Creation and Switching of contexts should be done in a separate routine.
     //  This should be done by a "OsMakeProcess" routine, so that
