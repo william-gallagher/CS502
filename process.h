@@ -46,8 +46,6 @@ void getProcessID(SYSTEM_CALL_DATA* scd){
 
   char process_name[100];
   strcpy(process_name, (char*)scd->Argument[0]);
-  printf("%s is the process name\n\n", process_name);
-  printf("%d is the current process\n", PCB->current);
 
   //Requesting current process
   if(strcmp(process_name, "") == 0){

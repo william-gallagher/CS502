@@ -34,6 +34,7 @@
 
 //My includes
 #include "process.h"
+#include "timerQueue.h"
 
 
 //  This is a mapping of system call nmemonics with definitions
@@ -68,7 +69,7 @@ void InterruptHandler(void) {
 
     static BOOL  remove_this_from_your_interrupt_code = TRUE; /** TEMP **/
     static INT32 how_many_interrupt_entries = 0;              /** TEMP **/
-
+  
     // Get cause of interrupt
     mmio.Mode = Z502GetInterruptInfo;
     mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
@@ -87,6 +88,21 @@ void InterruptHandler(void) {
         aprintf("InterruptHandler: Found device ID %d with status %d\n",
                 DeviceID, Status);
     }
+
+    switch(DeviceID){
+    case TIMER_INTERRUPT:
+      printf("must handle the timer interrupt\n\n");
+      TQ_ELEMENT* tqe = (TQ_ELEMENT *)QRemoveHead(timer_queue_id);
+
+      //restart the process
+      mmio.Mode = Z502StartContext;
+      mmio.Field1 = tqe->context;
+      mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+      MEM_WRITE(Z502Context, &mmio);
+      printf("does program come here???\n\n");
+      break;
+    }
+      
 
 }           // End of InterruptHandler
 
@@ -119,7 +135,7 @@ void FaultHandler(void) {
             aprintf("FaultHandler: Found device ID %d with status %d\n",
                             (int) mmio.Field1, (int) mmio.Field2);
     }
-
+    
 } // End of FaultHandler
 
 /************************************************************************
@@ -159,19 +175,37 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       *(long *)SystemCallData->Argument[0] = mmio.Field1;
       break;
 
+      //added in for test 1
     case SYSNUM_GET_PROCESS_ID:
-			
-      //my best guess of what to do
-      // mmio.Mode = Z502ReturnValue;
-      // mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-
       getProcessID(SystemCallData);
-      
-      //code that should get a Process ID number from PCB
-      // *(long *)SystemCallData->Argument[1] = 20; 	//just set to 20
-      // *(long *)SystemCallData->Argument[2] = 0;    //set to zero to prevent errors
       break;
 
+      //added in for test 2
+    case SYSNUM_SLEEP:
+      printf("arrived in svc at SLEEP\n\n\n");
+
+      long sleep_time = (long)SystemCallData->Argument[0];
+      
+       	TQ_ELEMENT* tqe = malloc(sizeof(TQ_ELEMENT));
+	PROCESS_INFO* curr_proc = &PCB->processes[PCB->current];
+       	tqe->context = curr_proc->context;
+	tqe->wakeup_time = mmio.Field1;
+
+	//add tqe to the timer queue
+	QInsert(timer_queue_id, (unsigned int)sleep_time, (void*)tqe);
+	  
+      	// Start the timer 
+	mmio.Mode = Z502Start;
+	mmio.Field1 = sleep_time;   
+	mmio.Field2 = mmio.Field3 = 0;
+	MEM_WRITE(Z502Timer, &mmio);
+	
+	//idle process
+	mmio.Mode = Z502Action;
+	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+       	MEM_WRITE(Z502Idle, &mmio);
+      break;
+      
     case SYSNUM_TERMINATE_PROCESS:
       mmio.Mode = Z502Action;
       mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
@@ -248,7 +282,12 @@ void osInit(int argc, char *argv[]) {
     //  Look at this carefully - this is an example of how you will start
     //     all of the other tests.
 
+    //create the structures for the OS
     PCB = CreatePCB();
+
+    if(CreateTimerQueue() == -1){
+      printf("\n\nUnable to create Timer Queue!\n\n");
+    }
     
     if ((argc > 1) && (strcmp(argv[1], "sample") == 0)) {
         mmio.Mode = Z502InitializeContext;
@@ -279,7 +318,24 @@ void osInit(int argc, char *argv[]) {
         MEM_WRITE(Z502Context, &mmio);     // Start up the context
 
     } // End of handler for test1 code - This routine should never return here
+
+	if ((argc > 1) && (strcmp(argv[1], "test2") == 0)) {
+        mmio.Mode = Z502InitializeContext;
+        mmio.Field1 = 0;
+        mmio.Field2 = (long) test2;
+        mmio.Field3 = (long) PageTable;
+
+        MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
+	//not sure where to call osCreateProcess
+	osCreateProcess(argv[1], mmio.Field1);
 	
+        mmio.Mode = Z502StartContext;
+        // Field1 contains the value of the context returned in the last call
+        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+        MEM_WRITE(Z502Context, &mmio);     // Start up the context
+
+    } // End of handler for test1 code - This routine should never return here
+		
     //  By default test0 runs if no arguments are given on the command line
     //  Creation and Switching of contexts should be done in a separate routine.
     //  This should be done by a "OsMakeProcess" routine, so that
