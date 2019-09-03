@@ -91,7 +91,7 @@ void InterruptHandler(void) {
 
     switch(DeviceID){
     case TIMER_INTERRUPT:
-      printf("must handle the timer interrupt\n\n");
+      aprintf("must handle the timer interrupt\n\n");
       TQ_ELEMENT* tqe = (TQ_ELEMENT *)QRemoveHead(timer_queue_id);
 
       //restart the process
@@ -99,10 +99,23 @@ void InterruptHandler(void) {
       mmio.Field1 = tqe->context;
       mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
       MEM_WRITE(Z502Context, &mmio);
-      printf("does program come here???\n\n");
+      aprintf("does program come here???\n\n");
       break;
+    
+    case DISK_INTERRUPT_DISK1:
+
+      aprintf("\n\n\nWe have a disk interrupt\n\n\n");
+      /*      DQ_ELEMENT* dqe = (DQ_ELEMENT *)QRemoveHead(disk_queue[1]);
+
+      //restart the process
+      mmio.Mode = Z502StartContext;
+      mmio.Field1 = dqe->context;
+      mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+      MEM_WRITE(Z502Context, &mmio);
+      aprintf("does program come here???\n\n");
+      */
+	    break;
     }
-      
 
 }           // End of InterruptHandler
 
@@ -166,6 +179,13 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
         }
         do_print--;
     }
+
+    long disk_id;
+    long disk_sector;
+    long disk_address;
+    long sleep_time;
+    DQ_ELEMENT* dq;
+    
     switch(call_type){
       
     case SYSNUM_GET_TIME_OF_DAY:
@@ -182,9 +202,8 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
       //added in for test 2
     case SYSNUM_SLEEP:
-      printf("arrived in svc at SLEEP\n\n\n");
 
-      long sleep_time = (long)SystemCallData->Argument[0];
+      sleep_time = (long)SystemCallData->Argument[0];
       
        	TQ_ELEMENT* tqe = malloc(sizeof(TQ_ELEMENT));
 	PROCESS_INFO* curr_proc = &PCB->processes[PCB->current];
@@ -211,14 +230,92 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
       MEM_WRITE(Z502Halt, &mmio);
       break;
-
-    default:
-      printf("ERROR! call_type is not recognized!\n");
-      printf("Call_type is - %i\n", call_type);
-
-    }//end switch
       
-}                                               // End of svc
+    case SYSNUM_PHYSICAL_DISK_READ:
+
+      disk_id = (long)SystemCallData->Argument[0];
+      disk_sector = (long)SystemCallData->Argument[1];
+      disk_address = (long)SystemCallData->Argument[2];
+
+      //create struct for disk queue
+      dq = malloc(sizeof(DQ_ELEMENT));
+      curr_proc = &PCB->processes[PCB->current];
+      dq->context = curr_proc->context;
+      
+      //add process to proper Disk Queue as last element
+      QInsertOnTail(disk_queue[disk_id], (void *)dq);
+      
+      mmio.Mode = Z502DiskRead;
+      mmio.Field1 = disk_id;
+      mmio.Field2 = disk_sector;
+      mmio.Field3 = disk_address;
+      
+      MEM_WRITE(Z502Disk, &mmio);
+      
+      //idle Z502
+      mmio.Mode = Z502Action;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+      MEM_WRITE(Z502Idle, &mmio);
+
+       break;
+       
+    case SYSNUM_PHYSICAL_DISK_WRITE:
+
+      disk_id = (long)SystemCallData->Argument[0];
+      disk_sector = (long)SystemCallData->Argument[1];
+      disk_address = (long)SystemCallData->Argument[2];
+
+      //create struct for disk queue
+      dq = malloc(sizeof(DQ_ELEMENT));
+      curr_proc = &PCB->processes[PCB->current];
+      dq->context = curr_proc->context;
+      
+      //add process to proper Disk Queue as last element
+      QInsertOnTail(disk_queue[disk_id], (void *)dq);
+      
+      mmio.Mode = Z502DiskWrite;
+      mmio.Field1 = disk_id;
+      mmio.Field2 = disk_sector;
+      mmio.Field3 = disk_address;
+      
+      MEM_WRITE(Z502Disk, &mmio);
+      
+      //idle Z502
+      mmio.Mode = Z502Action;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+      MEM_WRITE(Z502Idle, &mmio);
+
+      /*     //restart the process
+      mmio.Mode = Z502StartContext;
+      mmio.Field1 = dq->context;
+      mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+      MEM_WRITE(Z502Context, &mmio);
+      aprintf("does program come here???\n\n");
+      */
+       break;
+       /*            
+    case SYSNUM_CHECK_DISK:
+      disk_id = (long)SystemCallData->Argument[0];
+      disk_sector = (long)SystemCallData->Argument[1];
+      
+      mmio.Mode = Z502CheckDisk;
+      mmio.Field1 = disk_id;
+      mmio.Field2 = 0;
+      mmio.Field3 = 0;
+      
+      MEM_WRITE(Z502Disk, &mmio);
+      
+      //idle Z502
+      mmio.Mode = Z502Action;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+      MEM_WRITE(Z502Idle, &mmio);
+      break;
+       */
+    default:
+      aprintf("\n\n\nNo SysCall number!!!\n\n\n");
+    }
+
+}           // End of SVC
 
 /************************************************************************
  osInit
@@ -285,8 +382,13 @@ void osInit(int argc, char *argv[]) {
     //create the structures for the OS
     PCB = CreatePCB();
 
+    //Timer Queue
     if(CreateTimerQueue() == -1){
       printf("\n\nUnable to create Timer Queue!\n\n");
+    }
+    //Disk Queues
+    for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
+      CreateDiskQueue(i);
     }
     
     if ((argc > 1) && (strcmp(argv[1], "sample") == 0)) {
@@ -302,16 +404,15 @@ void osInit(int argc, char *argv[]) {
         MEM_WRITE(Z502Context, &mmio);     // Start up the context
 
     } // End of handler for sample code - This routine should never return here
-        if ((argc > 1) && (strcmp(argv[1], "test1") == 0)) {
+
+
+   if ((argc > 1) && (strcmp(argv[1], "test1") == 0)) {
         mmio.Mode = Z502InitializeContext;
         mmio.Field1 = 0;
         mmio.Field2 = (long) test1;
         mmio.Field3 = (long) PageTable;
 
         MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
-	//not sure where to call osCreateProcess
-	osCreateProcess(argv[1], mmio.Field1);
-	
         mmio.Mode = Z502StartContext;
         // Field1 contains the value of the context returned in the last call
         mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
@@ -319,7 +420,9 @@ void osInit(int argc, char *argv[]) {
 
     } // End of handler for test1 code - This routine should never return here
 
-	if ((argc > 1) && (strcmp(argv[1], "test2") == 0)) {
+
+    
+        if ((argc > 1) && (strcmp(argv[1], "test2") == 0)) {
         mmio.Mode = Z502InitializeContext;
         mmio.Field1 = 0;
         mmio.Field2 = (long) test2;
@@ -334,7 +437,24 @@ void osInit(int argc, char *argv[]) {
         mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
         MEM_WRITE(Z502Context, &mmio);     // Start up the context
 
-    } // End of handler for test1 code - This routine should never return here
+    } // End of handler for test2 code - This routine should never return here
+
+	if ((argc > 1) && (strcmp(argv[1], "test3") == 0)) {
+        mmio.Mode = Z502InitializeContext;
+        mmio.Field1 = 0;
+        mmio.Field2 = (long) test3;
+        mmio.Field3 = (long) PageTable;
+
+        MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
+	//not sure where to call osCreateProcess
+	osCreateProcess(argv[1], mmio.Field1);
+	
+        mmio.Mode = Z502StartContext;
+        // Field1 contains the value of the context returned in the last call
+        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+        MEM_WRITE(Z502Context, &mmio);     // Start up the context
+
+    } // End of handler for test3 code - This routine should never return here
 		
     //  By default test0 runs if no arguments are given on the command line
     //  Creation and Switching of contexts should be done in a separate routine.

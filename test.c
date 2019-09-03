@@ -194,6 +194,7 @@ void test3(void) {
 	DataWritten->int_data[1] = CheckValue;
 	DataWritten->int_data[2] = Sector;
 	DataWritten->int_data[3] = OurProcessID;
+
 	GET_TIME_OF_DAY(&Time1);
 	PHYSICAL_DISK_WRITE(DiskID, Sector, (char* )(DataWritten->char_data));
 	GET_TIME_OF_DAY(&Time2);
