@@ -226,9 +226,26 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       break;
       
     case SYSNUM_TERMINATE_PROCESS:
-      mmio.Mode = Z502Action;
-      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-      MEM_WRITE(Z502Halt, &mmio);
+
+      if((long)SystemCallData->Argument[0] == -1){
+	printf("Terminate Current process!\n");
+
+	TerminateProcess(PCB->current);
+	mmio.Mode = Z502Action;
+	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+	MEM_WRITE(Z502Halt, &mmio);
+      }
+      if((long)SystemCallData->Argument[0] == -2){
+	printf("Terminate current process and all children\n\n");
+	TerminateChildren(PCB->current);
+	TerminateProcess(PCB->current);
+	mmio.Mode = Z502Action;
+	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+	MEM_WRITE(Z502Halt, &mmio);
+      }
+      
+
+      *(long *)SystemCallData->Argument[1] = 0;  //set error message
       break;
       
     case SYSNUM_PHYSICAL_DISK_READ:
@@ -311,6 +328,19 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       MEM_WRITE(Z502Idle, &mmio);
       break;
        */
+
+    case SYSNUM_CREATE_PROCESS:
+
+	 printf("\n\n\ncreate a process here\n\n\n");
+	 char* name = (char *)SystemCallData->Argument[0];
+	 long start_address = (long)SystemCallData->Argument[1];
+	 long priority = (long)SystemCallData->Argument[2];
+	 long* process_id = (long *)SystemCallData->Argument[3];
+	 long* return_error = (long *)SystemCallData->Argument[4];
+	 CreateProcess(name, start_address, priority, PCB->current, process_id, return_error);
+      break;
+      
+       
     default:
       aprintf("\n\n\nNo SysCall number!!!\n\n\n");
     }
@@ -380,8 +410,11 @@ void osInit(int argc, char *argv[]) {
     //     all of the other tests.
 
     //create the structures for the OS
-    PCB = CreatePCB();
+    CreatePCB();
 
+    //test print
+    ProcessesState();
+    
     //Timer Queue
     if(CreateTimerQueue() == -1){
       printf("\n\nUnable to create Timer Queue!\n\n");
@@ -430,7 +463,7 @@ void osInit(int argc, char *argv[]) {
 
         MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
 	//not sure where to call osCreateProcess
-	osCreateProcess(argv[1], mmio.Field1);
+	osCreateProcess(argv[1], mmio.Field1, -1);
 	
         mmio.Mode = Z502StartContext;
         // Field1 contains the value of the context returned in the last call
@@ -447,7 +480,7 @@ void osInit(int argc, char *argv[]) {
 
         MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
 	//not sure where to call osCreateProcess
-	osCreateProcess(argv[1], mmio.Field1);
+	osCreateProcess(argv[1], mmio.Field1, -1);
 	
         mmio.Mode = Z502StartContext;
         // Field1 contains the value of the context returned in the last call
@@ -455,7 +488,25 @@ void osInit(int argc, char *argv[]) {
         MEM_WRITE(Z502Context, &mmio);     // Start up the context
 
     } // End of handler for test3 code - This routine should never return here
-		
+
+	if ((argc > 1) && (strcmp(argv[1], "test4") == 0)) {
+	  long return_error;
+	  long process_id;
+	  CreateProcess("test4", (long)test4, 1, -1, &process_id, &return_error);
+	ProcessesState();
+
+	PCB->current = 0;//hackhackhack....
+        mmio.Mode = Z502StartContext;
+        mmio.Field1 = PCB->processes[0].context; //hackhackhack...
+        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+        MEM_WRITE(Z502Context, &mmio);     // Start up the context
+
+    } // End of handler for test4 code - This routine should never return here
+
+
+
+
+	
     //  By default test0 runs if no arguments are given on the command line
     //  Creation and Switching of contexts should be done in a separate routine.
     //  This should be done by a "OsMakeProcess" routine, so that
