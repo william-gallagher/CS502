@@ -36,6 +36,7 @@
 #include "process.h"
 #include "timerQueue.h"
 
+long GetTestName(char* test_name);
 
 //  This is a mapping of system call nmemonics with definitions
 
@@ -60,62 +61,64 @@ char *call_names[] = {"MemRead  ", "MemWrite ", "ReadMod  ", "GetTime  ",
          hasn't been written to, that disk will interrupt - the
          data isn't valid and it's telling you it was confused.
          YOU MUST READ THE ERROR STATUS ON THE INTERRUPT
- ************************************************************************/
+************************************************************************/
+
 void InterruptHandler(void) {
     INT32 DeviceID;
     INT32 Status;
 
     MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
-
-    static BOOL  remove_this_from_your_interrupt_code = TRUE; /** TEMP **/
-    static INT32 how_many_interrupt_entries = 0;              /** TEMP **/
-  
+    aprintf("\nWelcome to the IH\n\n");
     // Get cause of interrupt
     mmio.Mode = Z502GetInterruptInfo;
     mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
     MEM_READ(Z502InterruptDevice, &mmio);
-    DeviceID = mmio.Field1;
-    Status = mmio.Field2;
-    if (mmio.Field4 != ERR_SUCCESS) {
+
+    if(mmio.Field4 != ERR_SUCCESS){
+      aprintf("\n\nPROB WITH INTERRUPT\n\n");
+    }
+    while(mmio.Field4 == ERR_SUCCESS) {
+      DeviceID = mmio.Field1;
+      Status = mmio.Field2;
+      /*
         aprintf( "The InterruptDevice call in the InterruptHandler has failed.\n");
         aprintf("The DeviceId and Status that were returned are not valid.\n");
-    }
-    // HAVE YOU CHECKED THAT THE INTERRUPTING DEVICE FINISHED WITHOUT ERROR?
-
-    /** REMOVE THESE SIX LINES **/
-    how_many_interrupt_entries++; /** TEMP **/
-    if (remove_this_from_your_interrupt_code && (how_many_interrupt_entries < 10)) {
-        aprintf("InterruptHandler: Found device ID %d with status %d\n",
-                DeviceID, Status);
-    }
-
-    switch(DeviceID){
-    case TIMER_INTERRUPT:
-      aprintf("must handle the timer interrupt\n\n");
-      TQ_ELEMENT* tqe = (TQ_ELEMENT *)QRemoveHead(timer_queue_id);
-
-      //restart the process
-      mmio.Mode = Z502StartContext;
-      mmio.Field1 = tqe->context;
-      mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-      MEM_WRITE(Z502Context, &mmio);
-      aprintf("does program come here???\n\n");
-      break;
-    
-    case DISK_INTERRUPT_DISK1:
-
-      aprintf("\n\n\nWe have a disk interrupt\n\n\n");
-      /*      DQ_ELEMENT* dqe = (DQ_ELEMENT *)QRemoveHead(disk_queue[1]);
-
-      //restart the process
-      mmio.Mode = Z502StartContext;
-      mmio.Field1 = dqe->context;
-      mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-      MEM_WRITE(Z502Context, &mmio);
-      aprintf("does program come here???\n\n");
+	}
       */
-	    break;
+      // HAVE YOU CHECKED THAT THE INTERRUPTING DEVICE FINISHED WITHOUT ERROR?
+
+
+
+      aprintf("InterruptHandler: Found device ID %d with status %d\n",
+	      DeviceID, Status);
+
+      switch(DeviceID){
+      case TIMER_INTERRUPT:
+	aprintf("must handle the timer interrupt\n\n");
+	HandleTimerInterrupt();
+
+	break;
+    
+      case DISK_INTERRUPT_DISK1:
+
+	aprintf("\n\n\nWe have a disk interrupt\n\n\n");
+	/*      DQ_ELEMENT* dqe = (DQ_ELEMENT *)QRemoveHead(disk_queue[1]);
+
+	//restart the process
+	mmio.Mode = Z502StartContext;
+	mmio.Field1 = dqe->context;
+	mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
+	MEM_WRITE(Z502Context, &mmio);
+	aprintf("does program come here???\n\n");
+	*/
+	break;
+      }
+      //see if there is another interrupt
+      mmio.Mode = Z502GetInterruptInfo;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
+      MEM_READ(Z502InterruptDevice, &mmio);
     }
+    
 
 }           // End of InterruptHandler
 
@@ -185,6 +188,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
     long disk_address;
     long sleep_time;
     DQ_ELEMENT* dq;
+    PROCESS_CONTROL_BLOCK* curr_proc;
     
     switch(call_type){
       
@@ -203,26 +207,10 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       //added in for test 2
     case SYSNUM_SLEEP:
 
-      sleep_time = (long)SystemCallData->Argument[0];
+      //printf("\n\n\nHere at SYSCALL Sleep\n\n\n");
       
-       	TQ_ELEMENT* tqe = malloc(sizeof(TQ_ELEMENT));
-	PROCESS_INFO* curr_proc = &PCB->processes[PCB->current];
-       	tqe->context = curr_proc->context;
-	tqe->wakeup_time = mmio.Field1;
-
-	//add tqe to the timer queue
-	QInsert(timer_queue_id, (unsigned int)sleep_time, (void*)tqe);
-	  
-      	// Start the timer 
-	mmio.Mode = Z502Start;
-	mmio.Field1 = sleep_time;   
-	mmio.Field2 = mmio.Field3 = 0;
-	MEM_WRITE(Z502Timer, &mmio);
-	
-	//idle process
-	mmio.Mode = Z502Action;
-	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-       	MEM_WRITE(Z502Idle, &mmio);
+      sleep_time = (long)SystemCallData->Argument[0];
+      StartTimer(sleep_time);
       break;
       
     case SYSNUM_TERMINATE_PROCESS:
@@ -230,15 +218,15 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       if((long)SystemCallData->Argument[0] == -1){
 	printf("Terminate Current process!\n");
 
-	TerminateProcess(PCB->current);
+	TerminateProcess(PRO_INFO->current);
 	mmio.Mode = Z502Action;
 	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
 	MEM_WRITE(Z502Halt, &mmio);
       }
       if((long)SystemCallData->Argument[0] == -2){
 	printf("Terminate current process and all children\n\n");
-	TerminateChildren(PCB->current);
-	TerminateProcess(PCB->current);
+	TerminateChildren(PRO_INFO->current);
+	TerminateProcess(PRO_INFO->current);
 	mmio.Mode = Z502Action;
 	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
 	MEM_WRITE(Z502Halt, &mmio);
@@ -256,7 +244,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
       //create struct for disk queue
       dq = malloc(sizeof(DQ_ELEMENT));
-      curr_proc = &PCB->processes[PCB->current];
+      curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
       dq->context = curr_proc->context;
       
       //add process to proper Disk Queue as last element
@@ -284,7 +272,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
       //create struct for disk queue
       dq = malloc(sizeof(DQ_ELEMENT));
-      curr_proc = &PCB->processes[PCB->current];
+      curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
       dq->context = curr_proc->context;
       
       //add process to proper Disk Queue as last element
@@ -337,7 +325,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 	 long priority = (long)SystemCallData->Argument[2];
 	 long* process_id = (long *)SystemCallData->Argument[3];
 	 long* return_error = (long *)SystemCallData->Argument[4];
-	 CreateProcess(name, start_address, priority, PCB->current, process_id, return_error);
+	 CreateProcess(name, start_address, priority, PRO_INFO->current, process_id, return_error);
       break;
       
        
@@ -410,7 +398,7 @@ void osInit(int argc, char *argv[]) {
     //     all of the other tests.
 
     //create the structures for the OS
-    CreatePCB();
+    CreatePRO_INFO();
 
     //test print
     ProcessesState();
@@ -423,6 +411,11 @@ void osInit(int argc, char *argv[]) {
     for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
       CreateDiskQueue(i);
     }
+    //Ready Queue
+    if(CreateReadyQueue() == -1){
+      printf("\n\nUnable to create Ready Queue!\n\n");
+    }
+
     
     if ((argc > 1) && (strcmp(argv[1], "sample") == 0)) {
         mmio.Mode = Z502InitializeContext;
@@ -438,74 +431,25 @@ void osInit(int argc, char *argv[]) {
 
     } // End of handler for sample code - This routine should never return here
 
-
-   if ((argc > 1) && (strcmp(argv[1], "test1") == 0)) {
-        mmio.Mode = Z502InitializeContext;
-        mmio.Field1 = 0;
-        mmio.Field2 = (long) test1;
-        mmio.Field3 = (long) PageTable;
-
-        MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
-        mmio.Mode = Z502StartContext;
-        // Field1 contains the value of the context returned in the last call
-        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-        MEM_WRITE(Z502Context, &mmio);     // Start up the context
-
-    } // End of handler for test1 code - This routine should never return here
-
-
-    
-        if ((argc > 1) && (strcmp(argv[1], "test2") == 0)) {
-        mmio.Mode = Z502InitializeContext;
-        mmio.Field1 = 0;
-        mmio.Field2 = (long) test2;
-        mmio.Field3 = (long) PageTable;
-
-        MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
-	//not sure where to call osCreateProcess
-	osCreateProcess(argv[1], mmio.Field1, -1);
-	
-        mmio.Mode = Z502StartContext;
-        // Field1 contains the value of the context returned in the last call
-        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-        MEM_WRITE(Z502Context, &mmio);     // Start up the context
-
-    } // End of handler for test2 code - This routine should never return here
-
-	if ((argc > 1) && (strcmp(argv[1], "test3") == 0)) {
-        mmio.Mode = Z502InitializeContext;
-        mmio.Field1 = 0;
-        mmio.Field2 = (long) test3;
-        mmio.Field3 = (long) PageTable;
-
-        MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
-	//not sure where to call osCreateProcess
-	osCreateProcess(argv[1], mmio.Field1, -1);
-	
-        mmio.Mode = Z502StartContext;
-        // Field1 contains the value of the context returned in the last call
-        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-        MEM_WRITE(Z502Context, &mmio);     // Start up the context
-
-    } // End of handler for test3 code - This routine should never return here
-
-	if ((argc > 1) && (strcmp(argv[1], "test4") == 0)) {
+	if (argc > 1) {
 	  long return_error;
 	  long process_id;
-	  CreateProcess("test4", (long)test4, 1, -1, &process_id, &return_error);
-	ProcessesState();
 
-	PCB->current = 0;//hackhackhack....
-        mmio.Mode = Z502StartContext;
-        mmio.Field1 = PCB->processes[0].context; //hackhackhack...
-        mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-        MEM_WRITE(Z502Context, &mmio);     // Start up the context
+	  char buffer[20];
+	  strcpy(buffer, argv[1]);
+	  long test = GetTestName(buffer);
+	  CreateProcess(argv[1], test, 1, -1, &process_id, &return_error);
+	  ProcessesState();
 
-    } // End of handler for test4 code - This routine should never return here
+	  PRO_INFO->current = 0;//hackhackhack....
+	  /*
+	  RQ_ELEMENT* rqe = malloc(sizeof(RQ_ELEMENT));
+	  rqe->context =  PRO_INFO->PCB[0].context; //hackhackhack..
 
-
-
-
+	  QInsertOnTail(ready_queue_id, (void *) rqe);
+	  */
+	  dispatcher();
+	} 
 	
     //  By default test0 runs if no arguments are given on the command line
     //  Creation and Switching of contexts should be done in a separate routine.
@@ -525,3 +469,53 @@ void osInit(int argc, char *argv[]) {
     MEM_WRITE(Z502Context, &mmio);     // Start up the context
 
 }                                               // End of osInit
+
+
+long GetTestName(char* test_name){
+
+  printf("%s is the test name\n", test_name);
+
+  if(strcmp("sample", test_name) == 0)
+    return (long)(SampleCode);
+
+  if(strcmp("test0", test_name) == 0)
+    return (long)(test0);
+     
+  if(strcmp("test1", test_name) == 0)
+    return (long)(test1);
+    
+  if(strcmp("test2", test_name) == 0)
+    return (long)(test2);
+  
+  if(strcmp("test3", test_name) == 0)
+    return (long)(test3);
+  
+  if(strcmp("test4", test_name) == 0)
+    return (long)(test4);
+
+  if(strcmp("test5", test_name) == 0)
+    return (long)(test5);
+     
+  if(strcmp("test6", test_name) == 0)
+    return (long)(test6);
+    
+  if(strcmp("test7", test_name) == 0)
+    return (long)(test7);
+  
+  if(strcmp("test8", test_name) == 0)
+    return (long)(test8);
+  
+  if(strcmp("test9", test_name) == 0)
+    return (long)(test9);
+  
+  if(strcmp("test10", test_name) == 0)
+    return (long)(test10);
+  
+  if(strcmp("test11", test_name) == 0)
+    return (long)(test11);
+  
+  if(strcmp("test12", test_name) == 0)
+    return (long)(test12);
+  
+  return 0;
+}

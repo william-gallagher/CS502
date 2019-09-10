@@ -222,7 +222,8 @@ void test3(void) {
 	// It is implemented in svc simply by calling the hardware function.
 	// There will be a file produced that shows what is physically
 	//    on your disk.
-	CHECK_DISK(DiskID, &ErrorReturned);
+	
+CHECK_DISK(DiskID, &ErrorReturned);
 	TERMINATE_PROCESS(-1, &ErrorReturned);
 	aprintf("ERROR: Test should be terminated but isn't.\n");
 }          // End of test3
@@ -347,7 +348,10 @@ void test5(void) {
 	// process has terminated.
 	ErrorReturned = ERR_SUCCESS;
 	while (ErrorReturned == ERR_SUCCESS) {
+	//for(int i=0; i<5; i++){	
 		SLEEP(SleepTime);
+		GET_TIME_OF_DAY(&CurrentTime);
+		aprintf("Woke from sleep at %ld\n\n", CurrentTime);
 		GET_PROCESS_ID("testX", &ProcessID, &ErrorReturned);
 	}
 	GET_TIME_OF_DAY(&CurrentTime);
