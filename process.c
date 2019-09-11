@@ -40,9 +40,39 @@ long osCreateProcess(char* name, long context, INT32 parent){
   new_pcb->context = context;
   new_pcb->in_use = 1;
   new_pcb->parent = parent;
+  new_pcb->suspended = 0;
   
   return new_pcb->idnum;
 }
+
+/*Get the PID of the currently running process. This is accomplished by getting the context of the process through Memory Mapped IO Function Z50GetCurrentContext. This context is compared to the list of existing processes to determine which is running.
+ */
+long GetCurrentPID(){
+
+  MEMORY_MAPPED_IO mmio;
+  mmio.Mode = Z502GetCurrentContext;
+  mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
+  MEM_READ(Z502Context, &mmio);
+
+  if(mmio.Field4 != ERR_SUCCESS){
+    aprintf("\nFailed to Get Current Context\n");
+  }
+
+  long context = mmio.Field1;
+
+  for(int i=0; i<MAXPROCESSES; i++){
+    if(PRO_INFO->PCB[i].in_use != 0){
+      if(PRO_INFO->PCB[i].context == context){
+	return PRO_INFO->PCB[i].idnum;
+      }
+    }
+  }
+
+  return -1;
+  
+}
+
+
 
 void getProcessID(SYSTEM_CALL_DATA* scd){
 
@@ -51,7 +81,7 @@ void getProcessID(SYSTEM_CALL_DATA* scd){
 
   //Requesting current process
   if(strcmp(process_name, "") == 0){
-    *(long *)scd->Argument[1] = PRO_INFO->current;
+    *(long *)scd->Argument[1] = GetCurrentPID();
     *(long *)scd->Argument[2] = 0;//no error
   }
   else{
@@ -68,6 +98,100 @@ void getProcessID(SYSTEM_CALL_DATA* scd){
     // printf("Requested something other than current process\nNot implemented yet!\n\n");
   }
 }
+
+/*This function accepts a pointer to a Process Control Block and an PID. It sets the pointer to the PCB of the PID.
+ */
+PROCESS_CONTROL_BLOCK* GetPCB(long PID){
+
+  PROCESS_CONTROL_BLOCK* process;
+  
+  for(int i=0; i<MAXPROCESSES; i++){
+    if(PRO_INFO->PCB[i].in_use != 0){
+      printf("%d is in use \n\n", i);
+      if(PRO_INFO->PCB[i].idnum == PID){
+	printf("here at %d\n", i);
+	process = &PRO_INFO->PCB[i];
+	return process;
+      }
+    }
+  }
+  process = NULL;
+  return process;
+
+}
+
+void osSuspendProcess(long PID, long* return_error){
+
+  //Check to see if process is the current process
+  if(GetCurrentPID() == PID){
+    aprintf("Cannot suspend current process!\n\n");
+    (*return_error) = 1;
+    return;
+  }
+
+  //check to see if process exists
+  PROCESS_CONTROL_BLOCK* process = GetPCB(PID);
+  if(process == NULL){
+    aprintf("Cannot suspend the process of a PID that DNE!\n\n");
+    (*return_error) = 1;
+    return;
+  }
+  else{
+    if(process->suspended == 1){
+      aprintf("Process is already suspended!\n\n");
+      (*return_error) = 1;
+      return;
+    }
+    else{
+      aprintf("Suspending process %ld\n\n", PID);
+      process->suspended = 1;
+      (*return_error) = 0;
+      return;
+    }
+  }    
+}
+
+
+
+
+void osResumeProcess(long PID, long* return_error){
+  /*
+  //Check to see if process is the current process
+  if(GetCurrentPID() == PID){
+    aprintf("Cannot suspend current process!\n\n");
+    (*return_error) = 1;
+    return;
+  }
+  */
+  
+  //check to see if process exists
+  PROCESS_CONTROL_BLOCK* process = GetPCB(PID);
+  if(process == NULL){
+    aprintf("Cannot resume the process of a PID that DNE!\n\n");
+    (*return_error) = 1;
+    return;
+  }
+  else{
+    if(process->suspended == 0){
+      aprintf("Process is already running!\n\n");
+      (*return_error) = 1;
+      return;
+    }
+    else{
+      aprintf("Resuming process %ld\n\n", PID);
+      process->suspended = 0;
+      (*return_error) = 0;
+      return;
+    }
+  }    
+}
+
+
+
+
+
+
+
 
 //Not sure how to handle children of process
 //returning errors
@@ -157,6 +281,7 @@ void CreateProcess(char* name, long start_address, long priority, INT32 parent, 
   context = mmio.Field1;//Field1 returns the context from initialize context
   printf("\n\nhere is the new context %lx\n\n", context);
   idnum = osCreateProcess(name, context, parent);
+  
   
   *process_id = idnum;  //set error message  
   printf("Here is the name of the process %s\n\n", name);

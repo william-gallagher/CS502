@@ -394,6 +394,8 @@ void test6(void) {
 			&ErrorReturned);
 	SuccessExpected(ErrorReturned, "CREATE_PROCESS");
 
+	aprintf("The PID of the newly create processes is %ld\n", TargetProcessID);
+
 	// Try to Suspend an Illegal PID
 	SUSPEND_PROCESS((INT32 )9999, &ErrorReturned);
 	ErrorExpected(ErrorReturned, "SUSPEND_PROCESS");

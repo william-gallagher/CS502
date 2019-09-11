@@ -14,6 +14,7 @@ typedef struct{
   long context;
   char name[100];
   INT32 priority;
+  INT32 suspended;
 } PROCESS_CONTROL_BLOCK;
 
 typedef struct{
@@ -33,6 +34,10 @@ void ProcessesState();
   void CreatePRO_INFO();
   
 long osCreateProcess(char* name, long context, INT32 parent);
+
+void osSuspendProcess(long PID, long* return_error);
+
+void osResumeProcess(long PID, long* return_error);
 
 void getProcessID(SYSTEM_CALL_DATA* scd);
 

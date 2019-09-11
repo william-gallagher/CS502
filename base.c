@@ -327,7 +327,25 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 	 long* return_error = (long *)SystemCallData->Argument[4];
 	 CreateProcess(name, start_address, priority, PRO_INFO->current, process_id, return_error);
       break;
-      
+
+    case SYSNUM_SUSPEND_PROCESS:
+
+      printf("\n\nSuspend Process\n\n");
+      long PID = (long)SystemCallData->Argument[0];
+      return_error = (long *)SystemCallData->Argument[1];
+      osSuspendProcess(PID, return_error);
+
+      break;
+
+    case SYSNUM_RESUME_PROCESS:
+
+      printf("\n\nResume Process\n\n");
+      PID = (long)SystemCallData->Argument[0];
+      return_error = (long *)SystemCallData->Argument[1];
+      osResumeProcess(PID, return_error);
+
+      break;
+     
        
     default:
       aprintf("\n\n\nNo SysCall number!!!\n\n\n");
