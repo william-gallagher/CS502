@@ -6,6 +6,7 @@
 #include "timerQueue.h"
 #include "process.h"
 #include "protos.h"
+#include "os_globals.h"
 
 
 
@@ -99,7 +100,31 @@ void getProcessID(SYSTEM_CALL_DATA* scd){
   }
 }
 
-/*This function accepts a pointer to a Process Control Block and an PID. It sets the pointer to the PCB of the PID.
+
+/*This function accepts a context. It sets the pointer to the PCB of the PID.
+ */
+PROCESS_CONTROL_BLOCK* GetPCBContext(long context){
+
+  PROCESS_CONTROL_BLOCK* process;
+  
+  for(int i=0; i<MAXPROCESSES; i++){
+    if(PRO_INFO->PCB[i].in_use != 0){
+
+      if(PRO_INFO->PCB[i].context == context){
+
+	process = &PRO_INFO->PCB[i];
+	return process;
+      }
+    }
+  }
+  process = NULL;
+  aprintf("Could not find the proper PCB from that context\n");
+  return process;
+}
+
+
+
+/*This function accepts a PID. It returns the pointer to the PCB of the PID.
  */
 PROCESS_CONTROL_BLOCK* GetPCB(long PID){
 

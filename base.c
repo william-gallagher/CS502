@@ -35,6 +35,7 @@
 //My includes
 #include "process.h"
 #include "timerQueue.h"
+#include "os_globals.h"
 
 long GetTestName(char* test_name);
 
@@ -429,10 +430,20 @@ void osInit(int argc, char *argv[]) {
     for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
       CreateDiskQueue(i);
     }
+
+    //Initialize Disk Queue Locks
+    InitializeDiskLocks();
+    
     //Ready Queue
     if(CreateReadyQueue() == -1){
       printf("\n\nUnable to create Ready Queue!\n\n");
     }
+
+    //Suspended Queue
+    if(CreateSuspendQueue() == -1){
+      printf("\n\nUnable to create Suspended Queue!\n\n");
+    }
+
 
     
     if ((argc > 1) && (strcmp(argv[1], "sample") == 0)) {

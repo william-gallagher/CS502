@@ -4,6 +4,17 @@
 #include <stdlib.h>
 #include "protos.h"
 #include "process.h"
+#include "os_globals.h"
+
+int CreateSuspendQueue(){
+  suspend_queue_id = QCreate("SQueue");
+  return suspend_queue_id;
+}
+
+
+
+
+
 
 int CreateReadyQueue(){
   ready_queue_id = QCreate("RQueue");
@@ -15,6 +26,8 @@ Create a RQ_ELEMENT with context and add to the Ready Queue
 */
 void AddToReadyQueue(long context){
 
+  PROCESS_CONTROL_BLOCK* process = GetPCBContext(context);
+  
   //Check for access to Ready Queue
   INT32 Suspend_Until_Locked = TRUE;
   INT32 Sucess_Failure = -1;
@@ -27,6 +40,7 @@ void AddToReadyQueue(long context){
   
   RQ_ELEMENT* rqe = malloc(sizeof(RQ_ELEMENT));
   rqe->context = context;
+  process->queue_ptr = (void *)rqe;
 
   QInsertOnTail(ready_queue_id, (void *) rqe);
   QPrint(ready_queue_id);
@@ -40,9 +54,44 @@ void AddToReadyQueue(long context){
 
 
 /*
-Remove a RQ_ELEMENT from the Ready Queue. Return the context stored in the RQ_ELEMENT
+Checks to see if the process is in the Ready Queue. If so the process is removed.
 */
-long RemoveFromReadyQueue(){
+long RemoveFromReadyQueue(PROCESS_CONTROL_BLOCK* process){
+
+  //Check for access to Ready Queue
+  INT32 Suspend_Until_Locked = TRUE;
+  INT32 Sucess_Failure = -1;
+
+  READ_MODIFY(READY_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould Not Obtain the Lock for the Ready Lock\n\n");
+  }
+  
+  if((long)QRemoveItem(ready_queue_id, process->queue_ptr) == -1){
+    aprintf("\nProcess not found in Ready Queue\n\n");
+  }
+  else{
+    aprintf("\nProcess removed form Ready Queue\n\n");
+  }    
+    
+  QPrint(ready_queue_id);
+  
+  READ_MODIFY(READY_LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould not give up Lock for Ready Lock\n\n");
+  }
+
+  return 1;
+}
+
+
+
+/*
+Remove a RQ_ELEMENT from the head of the Ready Queue. Return the context stored in the RQ_ELEMENT
+*/
+long RemoveFromReadyQueueHead(){
 
   //Check for access to Ready Queue
   INT32 Suspend_Until_Locked = TRUE;
@@ -191,7 +240,7 @@ void dispatcher(){
   while(CheckReadyQueue() == -1){}
 
    //RQ_ELEMENT* rqe = (RQ_ELEMENT *)QRemoveHead(ready_queue_id);
-   long context = RemoveFromReadyQueue();
+   long context = RemoveFromReadyQueueHead();
 
   mmio.Mode = Z502ReturnValue;
   mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
@@ -314,4 +363,11 @@ int CreateDiskQueue(int disk_number){
   printf("Here is the name: %s\n\n", queue_name);
   disk_queue[disk_number] = QCreate(queue_name);
   return 1;
+}
+
+void InitializeDiskLocks(){
+
+  for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
+    DISK_LOCK[i] = MEMORY_INTERLOCK_BASE + 2 + i;
+  }
 }
