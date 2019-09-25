@@ -18,6 +18,12 @@ void osResumeProcess(long PID, long* return_error);
 
 void getProcessID(SYSTEM_CALL_DATA* scd);
 
+long GetCurrentPID();
+
+long osGetCurrentContext();
+
+void* GetCurrentPCB();
+
 int CheckProcessName(char* name);
 
 /*This function checks to see if MAX_PROCESSES has been reached. If the OS has reached its limit 0 is returned. Otherwise 1 is returned. The function steps through the PRO_INFO to see if there is an open slot.
@@ -35,4 +41,8 @@ void TerminateChildren(long process_id);
   
 int CheckProcessName(char* name);
 
-PROCESS_CONTROL_BLOCK* GetPCBContext(long context);
+void* GetPCBContext(long context);
+
+void ChangeProcessState(long PID, INT32 new_state);
+
+void GetProcessState(long PID, INT32* state);

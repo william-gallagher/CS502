@@ -36,6 +36,7 @@
 #include "process.h"
 #include "timerQueue.h"
 #include "os_globals.h"
+#include "os_Schedule_Printer.h"
 
 long GetTestName(char* test_name);
 
@@ -70,6 +71,15 @@ void InterruptHandler(void) {
 
     MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
     aprintf("\nWelcome to the IH\n\n");
+    long CurrentTime;
+
+    	mmio.Mode = Z502ReturnValue;
+	mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
+	//	MEM_READ(Z502Clock, &mmio);
+	// CurrentTime = mmio.Field1;
+
+	//aprintf("Current time at the beginnning of the ih is %ld\n", CurrentTime);
+	
     // Get cause of interrupt
     mmio.Mode = Z502GetInterruptInfo;
     mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
@@ -93,27 +103,28 @@ void InterruptHandler(void) {
       aprintf("InterruptHandler: Found device ID %d with status %d\n",
 	      DeviceID, Status);
 
-      switch(DeviceID){
-      case TIMER_INTERRUPT:
+
+      if(DeviceID == TIMER_INTERRUPT){
 	aprintf("must handle the timer interrupt\n\n");
+	    //get the current time
+	mmio.Mode = Z502ReturnValue;
+	mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
+	//	MEM_READ(Z502Clock, &mmio);
+        CurrentTime = mmio.Field1;
+
+	//	aprintf("Current time is %ld in ih\n", CurrentTime);
 	HandleTimerInterrupt();
-
-	break;
-    
-      case DISK_INTERRUPT_DISK1:
-
-	aprintf("\n\n\nWe have a disk interrupt\n\n\n");
-	/*      DQ_ELEMENT* dqe = (DQ_ELEMENT *)QRemoveHead(disk_queue[1]);
-
-	//restart the process
-	mmio.Mode = Z502StartContext;
-	mmio.Field1 = dqe->context;
-	mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-	MEM_WRITE(Z502Context, &mmio);
-	aprintf("does program come here???\n\n");
-	*/
-	break;
       }
+      else if(DeviceID >= DISK_INTERRUPT &&
+	      DeviceID <= DISK_INTERRUPT + MAX_NUMBER_OF_DISKS -1){
+
+	long disk_id = DeviceID - DISK_INTERRUPT;
+	aprintf("\n\n\nWe have a disk interrupt %d\n\n\n", disk_id);
+	DQ_ELEMENT* dqe = disk_process[disk_id];
+	
+	AddToReadyQueue(dqe->context, dqe->PID, dqe->PCB);
+      }
+      
       //see if there is another interrupt
       mmio.Mode = Z502GetInterruptInfo;
       mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
@@ -167,29 +178,33 @@ void FaultHandler(void) {
  ************************************************************************/
 
 void svc(SYSTEM_CALL_DATA *SystemCallData) {
-    short call_type;
-    static short do_print = 10;
-    short i;
-    MEMORY_MAPPED_IO mmio;
 
-    call_type = (short) SystemCallData->SystemCallNumber;
-    if (do_print > 0) {
-        aprintf("SVC handler: %s\n", call_names[call_type]);
-        for (i = 0; i < SystemCallData->NumberOfArguments - 1; i++) {
-            //Value = (long)*SystemCallData->Argument[i];
-            aprintf("Arg %d: Contents = (Decimal) %8ld,  (Hex) %8lX\n", i,
-                    (unsigned long) SystemCallData->Argument[i],
-                    (unsigned long) SystemCallData->Argument[i]);
-        }
-        do_print--;
+  //just test the state printer
+  osPrintState();
+
+  short call_type;
+  static short do_print = 10;
+  short i;
+  MEMORY_MAPPED_IO mmio;
+
+  call_type = (short) SystemCallData->SystemCallNumber;
+  if (do_print > 0) {
+    aprintf("SVC handler: %s\n", call_names[call_type]);
+    for (i = 0; i < SystemCallData->NumberOfArguments - 1; i++) {
+      //Value = (long)*SystemCallData->Argument[i];
+      aprintf("Arg %d: Contents = (Decimal) %8ld,  (Hex) %8lX\n", i,
+	      (unsigned long) SystemCallData->Argument[i],
+	      (unsigned long) SystemCallData->Argument[i]);
     }
-
-    long disk_id;
-    long disk_sector;
-    long disk_address;
-    long sleep_time;
-    DQ_ELEMENT* dq;
-    PROCESS_CONTROL_BLOCK* curr_proc;
+    do_print--;
+  }
+  
+  long disk_id;
+  long disk_sector;
+  long disk_address;
+  long sleep_time;
+  DQ_ELEMENT* dq;
+  PROCESS_CONTROL_BLOCK* curr_proc;
     
     switch(call_type){
       
@@ -216,18 +231,24 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       
     case SYSNUM_TERMINATE_PROCESS:
 
+      aprintf("");
+      long PID = GetCurrentPID();
+      
       if((long)SystemCallData->Argument[0] == -1){
 	printf("Terminate Current process!\n");
 
-	TerminateProcess(PRO_INFO->current);
+	TerminateProcess(PID);
 	mmio.Mode = Z502Action;
 	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
 	MEM_WRITE(Z502Halt, &mmio);
       }
       if((long)SystemCallData->Argument[0] == -2){
 	printf("Terminate current process and all children\n\n");
-	TerminateChildren(PRO_INFO->current);
-	TerminateProcess(PRO_INFO->current);
+	TerminateChildren(PID);
+	TerminateProcess(PID);
+	//
+	//-----------! Can't halt if there are running processes
+	//
 	mmio.Mode = Z502Action;
 	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
 	MEM_WRITE(Z502Halt, &mmio);
@@ -243,26 +264,49 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       disk_sector = (long)SystemCallData->Argument[1];
       disk_address = (long)SystemCallData->Argument[2];
 
+
+
+      //curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
+      curr_proc = GetCurrentPCB();
+      
       //create struct for disk queue
       dq = malloc(sizeof(DQ_ELEMENT));
-      curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
       dq->context = curr_proc->context;
-      
-      //add process to proper Disk Queue as last element
-      QInsertOnTail(disk_queue[disk_id], (void *)dq);
-      
-      mmio.Mode = Z502DiskRead;
-      mmio.Field1 = disk_id;
-      mmio.Field2 = disk_sector;
-      mmio.Field3 = disk_address;
-      
-      MEM_WRITE(Z502Disk, &mmio);
-      
-      //idle Z502
-      mmio.Mode = Z502Action;
-      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-      MEM_WRITE(Z502Idle, &mmio);
+      dq->PID = curr_proc->idnum;
+      dq->PCB = curr_proc;
+    
+      long status;
+      CheckDiskStatus(disk_id, &status);
 
+      if(status == DEVICE_FREE){
+	aprintf("\nDisk %d is free\n\n", disk_id);
+	aprintf("Proceeding with the read\n");
+
+	//this is where to store the information about the process
+	disk_process[disk_id] = dq;
+	
+	mmio.Mode = Z502DiskRead;
+	mmio.Field1 = disk_id;
+	mmio.Field2 = disk_sector;
+	mmio.Field3 = disk_address;
+	
+	MEM_WRITE(Z502Disk, &mmio);
+     
+      }
+      else{
+	aprintf("\nDevice not free for read\n\n");
+
+	dq->disk_id = disk_id;
+	dq->disk_sector = disk_sector;
+	dq->disk_address = disk_address;
+	AddToDiskQueue(disk_id, dq);
+      }
+
+       //set process state to DISK
+      ChangeProcessState(GetCurrentPID(), DISK);
+  
+      dispatcher();
+     
        break;
        
     case SYSNUM_PHYSICAL_DISK_WRITE:
@@ -271,52 +315,85 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       disk_sector = (long)SystemCallData->Argument[1];
       disk_address = (long)SystemCallData->Argument[2];
 
+     //curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
+      curr_proc = GetCurrentPCB();
+      
       //create struct for disk queue
       dq = malloc(sizeof(DQ_ELEMENT));
-      curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
       dq->context = curr_proc->context;
+      dq->PID = curr_proc->idnum;
+      dq->PCB = curr_proc;
       
-      //add process to proper Disk Queue as last element
-      QInsertOnTail(disk_queue[disk_id], (void *)dq);
-      
-      mmio.Mode = Z502DiskWrite;
-      mmio.Field1 = disk_id;
-      mmio.Field2 = disk_sector;
-      mmio.Field3 = disk_address;
-      
-      MEM_WRITE(Z502Disk, &mmio);
-      
-      //idle Z502
-      mmio.Mode = Z502Action;
-      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-      MEM_WRITE(Z502Idle, &mmio);
+      curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
 
-      /*     //restart the process
-      mmio.Mode = Z502StartContext;
-      mmio.Field1 = dq->context;
-      mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
-      MEM_WRITE(Z502Context, &mmio);
-      aprintf("does program come here???\n\n");
-      */
+      CheckDiskStatus(disk_id, &status);
+
+      if(status == DEVICE_FREE){
+	aprintf("\nDisk %d is free\n\n", disk_id);
+	aprintf("Proceeding with the write\n");
+
+	//this is where to store the information about the process
+	disk_process[disk_id] = dq;
+	
+	mmio.Mode = Z502DiskWrite;
+	mmio.Field1 = disk_id;
+	mmio.Field2 = disk_sector;
+	mmio.Field3 = disk_address;
+	
+	MEM_WRITE(Z502Disk, &mmio);
+     
+      }
+      else{
+	aprintf("\nDevice not free\n\n");
+
+	dq->disk_id = disk_id;
+	dq->disk_sector = disk_sector;
+	dq->disk_address = disk_address;
+	AddToDiskQueue(disk_id, dq);
+      }
+
+      dispatcher();
+
+   
        break;
-       /*            
+           
     case SYSNUM_CHECK_DISK:
       disk_id = (long)SystemCallData->Argument[0];
       disk_sector = (long)SystemCallData->Argument[1];
-      
-      mmio.Mode = Z502CheckDisk;
-      mmio.Field1 = disk_id;
-      mmio.Field2 = 0;
-      mmio.Field3 = 0;
-      
-      MEM_WRITE(Z502Disk, &mmio);
-      
-      //idle Z502
-      mmio.Mode = Z502Action;
-      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-      MEM_WRITE(Z502Idle, &mmio);
+       curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
+
+      CheckDiskStatus(disk_id, &status);
+
+      if(status == DEVICE_FREE){
+	aprintf("\nDisk %d is free\n\n", disk_id);
+	aprintf("Proceeding with the check\n");
+
+	//this is where to store the information about the process
+	//	disk_process[disk_id] = curr_proc->context;
+	
+	mmio.Mode = Z502CheckDisk;
+	mmio.Field1 = disk_id;
+	mmio.Field2 = mmio.Field3 = 0;
+	
+	MEM_WRITE(Z502Disk, &mmio);
+     
+      }
+      else{
+	aprintf("\nDevice not free\n\n");
+	//create struct for disk queue
+	dq = malloc(sizeof(DQ_ELEMENT));
+	dq->context = curr_proc->context;
+	dq->disk_id = disk_id;
+	dq->disk_sector = disk_sector;
+	//dq->disk_address = disk_address;
+	AddToDiskQueue(disk_id, dq);
+      }
+
+      //dispatcher();  appears that no interrupt is thrown for CheckDisk
+      //browsing z502 code seems to confirm
+
       break;
-       */
+
 
     case SYSNUM_CREATE_PROCESS:
 
@@ -332,7 +409,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
     case SYSNUM_SUSPEND_PROCESS:
 
       printf("\n\nSuspend Process\n\n");
-      long PID = (long)SystemCallData->Argument[0];
+      PID = (long)SystemCallData->Argument[0];
       return_error = (long *)SystemCallData->Argument[1];
       osSuspendProcess(PID, return_error);
 
@@ -471,12 +548,7 @@ void osInit(int argc, char *argv[]) {
 	  ProcessesState();
 
 	  PRO_INFO->current = 0;//hackhackhack....
-	  /*
-	  RQ_ELEMENT* rqe = malloc(sizeof(RQ_ELEMENT));
-	  rqe->context =  PRO_INFO->PCB[0].context; //hackhackhack..
 
-	  QInsertOnTail(ready_queue_id, (void *) rqe);
-	  */
 	  dispatcher();
 	} 
 	

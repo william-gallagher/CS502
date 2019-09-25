@@ -10,7 +10,7 @@ void dispatcher();
 
 long RemoveFromReadyQueue(PROCESS_CONTROL_BLOCK* process);
 
-void AddToReadyQueue(long context);
+void AddToReadyQueue(long context, long PID, void* PCB);
 
 void StartTimer(long sleep_time);
 
@@ -26,3 +26,8 @@ int CreateSuspendQueue();
 int CreateDiskQueue(int disk_number);
 
 void InitializeDiskLocks();
+
+void AddToDiskQueue(long disk_id, DQ_ELEMENT* dqe);
+
+
+void CheckDiskStatus(long disk_id, long* status);

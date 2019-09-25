@@ -9,24 +9,27 @@
 #include "os_globals.h"
 
 
-
+ 
 //Test function that prints the states of all the processes
 void ProcessesState(){
   for(int i=0; i<MAXPROCESSES; i++){
     if(PRO_INFO->PCB[i].in_use == 0){
-      printf("PRO_INFO slot %d is not in use\n", i);
+      // printf("PRO_INFO slot %d is not in use\n", i);
     }
     else{
-      printf("\tPRO_INFO slot %d is in use\n\t%ld is the id\n\t%s is the name\n\twith parent %d\n\n", i, PRO_INFO->PCB[i].idnum, PRO_INFO->PCB[i].name,PRO_INFO->PCB[i].parent);
+      // printf("\tPRO_INFO slot %d is in use\n\t%ld is the id\n\t%s is the name\n\twith parent %d\n\n", i, PRO_INFO->PCB[i].idnum, PRO_INFO->PCB[i].name,PRO_INFO->PCB[i].parent);
     }
   }
 }
 
 //need to remember to free at end somehow
+//Also created a lock for each process
 void CreatePRO_INFO(){
   PRO_INFO = malloc(sizeof(PROCESSES_INFORMATION));
   for(int i=0; i<MAXPROCESSES; i++){
     PRO_INFO->PCB[i].in_use = 0;
+    PRO_INFO->PCB[i].LOCK = (PROC_LOCK_BASE + i);
+    //aprintf("%x is lock for process %d\n", PRO_INFO->PCB[i].LOCK, i);
   }
   
   PRO_INFO->nextid = 0;
@@ -41,7 +44,7 @@ long osCreateProcess(char* name, long context, INT32 parent){
   new_pcb->context = context;
   new_pcb->in_use = 1;
   new_pcb->parent = parent;
-  new_pcb->suspended = 0;
+  new_pcb->state = RUNNING;
   
   return new_pcb->idnum;
 }
@@ -74,7 +77,7 @@ long GetCurrentPID(){
 }
 
 
-
+//change the parameter passed here 
 void getProcessID(SYSTEM_CALL_DATA* scd){
 
   char process_name[100];
@@ -103,7 +106,7 @@ void getProcessID(SYSTEM_CALL_DATA* scd){
 
 /*This function accepts a context. It sets the pointer to the PCB of the PID.
  */
-PROCESS_CONTROL_BLOCK* GetPCBContext(long context){
+void* GetPCBContext(long context){
 
   PROCESS_CONTROL_BLOCK* process;
   
@@ -113,30 +116,30 @@ PROCESS_CONTROL_BLOCK* GetPCBContext(long context){
       if(PRO_INFO->PCB[i].context == context){
 
 	process = &PRO_INFO->PCB[i];
-	return process;
+	return (void*) process;
       }
     }
   }
   process = NULL;
   aprintf("Could not find the proper PCB from that context\n");
-  return process;
+  return (void*) process;
 }
 
 
 
 /*This function accepts a PID. It returns the pointer to the PCB of the PID.
  */
-PROCESS_CONTROL_BLOCK* GetPCB(long PID){
+void* GetPCB(long PID){
 
   PROCESS_CONTROL_BLOCK* process;
   
   for(int i=0; i<MAXPROCESSES; i++){
     if(PRO_INFO->PCB[i].in_use != 0){
-      printf("%d is in use \n\n", i);
+      //  printf("%d is in use \n\n", i);
       if(PRO_INFO->PCB[i].idnum == PID){
-	printf("here at %d\n", i);
+	//	printf("here at %d\n", i);
 	process = &PRO_INFO->PCB[i];
-	return process;
+	return (void*) process;
       }
     }
   }
@@ -145,11 +148,38 @@ PROCESS_CONTROL_BLOCK* GetPCB(long PID){
 
 }
 
+//Returns a pointer to the PCB of the currently executing process
+void* GetCurrentPCB(){
+
+  long PID = GetCurrentPID();
+  void* current_PCB = GetPCB(PID);
+
+  return current_PCB;
+}
+
+/*
+Returns the context of the currently executing process by using the z502GetCurrentContext call
+*/
+long osGetCurrentContext(){
+  
+  MEMORY_MAPPED_IO mmio;
+  mmio.Mode = Z502GetCurrentContext;
+  mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
+  MEM_READ(Z502Context, &mmio);
+
+  if(mmio.Field4 != ERR_SUCCESS){
+    aprintf("\nFailed to Get Current Context\n");
+  }
+
+  long context = mmio.Field1;
+  return context;
+}
+  
 void osSuspendProcess(long PID, long* return_error){
 
   //Check to see if process is the current process
   if(GetCurrentPID() == PID){
-    aprintf("Cannot suspend current process!\n\n");
+    aprintf("Cannot suspend the current process!\n\n");
     (*return_error) = 1;
     return;
   }
@@ -161,18 +191,39 @@ void osSuspendProcess(long PID, long* return_error){
     (*return_error) = 1;
     return;
   }
+
+  INT32 process_state;
+  GetProcessState(PID, &process_state);
+  if(process_state == SUSPENDED){
+    aprintf("Process is already suspended!\n\n");
+    (*return_error) = 1;
+    return;
+  }
+  else if(process_state == TIMER){
+    aprintf("Process on Timer Queue! Suspend when done\n\n!");
+    ChangeProcessState(PID, WAITING_TO_SUSPEND_TIMER);
+  }
+  else if(process_state == DISK){
+    aprintf("Process on Disk Queue! Suspend when done\n\n!");
+    ChangeProcessState(PID, WAITING_TO_SUSPEND_DISK);
+  }
+  else if(process_state == WAITING_TO_SUSPEND_TIMER ||
+	  process_state == WAITING_TO_SUSPEND_DISK){
+    aprintf("Process is already waiting to be suspended\n\n");
+  }
   else{
-    if(process->suspended == 1){
-      aprintf("Process is already suspended!\n\n");
-      (*return_error) = 1;
-      return;
+    aprintf("Suspending process %ld\n\n", PID);
+    ChangeProcessState(PID, SUSPENDED);
+    if(RemoveFromReadyQueue(process) != -1){
+      (*return_error) = 0;
+      aprintf("Removing from Ready Q\n");
+      QPrint(ready_queue_id);
     }
     else{
-      aprintf("Suspending process %ld\n\n", PID);
-      process->suspended = 1;
-      (*return_error) = 0;
-      return;
+      (*return_error) = 1;
     }
+    return;
+
   }    
 }
 
@@ -196,27 +247,36 @@ void osResumeProcess(long PID, long* return_error){
     (*return_error) = 1;
     return;
   }
+
+   INT32 process_state;
+  GetProcessState(PID, &process_state);
+  
+
+  if(process_state == RUNNING || process_state == READY ||
+     process_state == TIMER || process_state == DISK){
+    
+    aprintf("Process Does not need to be resumed\n\n");
+    (*return_error) = 1;
+    return;
+  }
+  else if(process_state == WAITING_TO_SUSPEND_TIMER){
+    aprintf("Returning state to Timer\n\n");
+    ChangeProcessState(PID, TIMER);
+  }
+  else if(process_state == WAITING_TO_SUSPEND_DISK){
+    aprintf("Returning state to disk\n\n");
+    ChangeProcessState(PID, DISK);
+  }
   else{
-    if(process->suspended == 0){
-      aprintf("Process is already running!\n\n");
-      (*return_error) = 1;
-      return;
-    }
-    else{
-      aprintf("Resuming process %ld\n\n", PID);
-      process->suspended = 0;
-      (*return_error) = 0;
-      return;
-    }
-  }    
+    aprintf("Resuming process %ld\n\n", PID);
+    ChangeProcessState(PID, READY);
+    AddToReadyQueue(process->context, PID, process);
+    QPrint(ready_queue_id);
+    (*return_error) = 0;
+    return;
+  }
+   
 }
-
-
-
-
-
-
-
 
 //Not sure how to handle children of process
 //returning errors
@@ -270,7 +330,7 @@ int CheckProcessCount(){
 void CreateProcess(char* name, long start_address, long priority, INT32 parent, long* process_id, long* return_error){
 
   long context;
-  long idnum;
+  long PID;
   MEMORY_MAPPED_IO mmio;
 
   // Every process will have a page table.  This will be used in
@@ -305,20 +365,17 @@ void CreateProcess(char* name, long start_address, long priority, INT32 parent, 
 
   context = mmio.Field1;//Field1 returns the context from initialize context
   printf("\n\nhere is the new context %lx\n\n", context);
-  idnum = osCreateProcess(name, context, parent);
+  PID = osCreateProcess(name, context, parent);
   
   
-  *process_id = idnum;  //set error message  
+  *process_id = PID;  //set error message  
   printf("Here is the name of the process %s\n\n", name);
 
   //set error field to 0 to indicate no error in process creation
   *return_error = 0;  //set error message
 
-  //add new process to ready queue
-  // RQ_ELEMENT* rqe = malloc(sizeof(RQ_ELEMENT));
-  //rqe->context =  context; 
-  //QInsertOnTail(ready_queue_id, (void *) rqe);
-  AddToReadyQueue(context);
+  ChangeProcessState(PID, READY);
+  AddToReadyQueue(context, PID, GetPCB(PID));
   // ProcessesState();
 }
 
@@ -340,3 +397,63 @@ int CheckProcessName(char* name){
   }
   return 1;
 }
+
+
+
+/*
+Changes the state of the process given 
+*/
+void ChangeProcessState(long PID, INT32 new_state){
+
+  PROCESS_CONTROL_BLOCK* PCB =  GetPCB(PID);
+
+  if(PCB == NULL){
+    aprintf("Could not retrieve PCB for PID %ld\n", PID);
+  }
+
+  INT32 LOCK = PCB->LOCK;
+  INT32 Suspend_Until_Locked = TRUE;
+  INT32 Sucess_Failure = -1;
+
+  READ_MODIFY(LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould Not Obtain the Lock to change process state\n\n");
+  }
+
+  PCB->state = new_state;
+
+    
+  READ_MODIFY(LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould not give up the lock to change process state\n\n");
+  }
+}  
+
+/*
+Get the state of the process given 
+*/
+void GetProcessState(long PID, INT32* state){
+
+  PROCESS_CONTROL_BLOCK* PCB =  GetPCB(PID);
+
+  if(PCB == NULL){
+    aprintf("Could not retrieve PCB for PID %ld\n", PID);
+  }
+
+  INT32 LOCK = PCB->LOCK;
+  INT32 Suspend_Until_Locked = TRUE;
+  INT32 Sucess_Failure = -1;
+
+  READ_MODIFY(LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould Not Obtain the Lock for get process state\n\n");
+  }
+
+  (*state) = PCB->state;
+    
+  READ_MODIFY(LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould not give up the lock for get process state\n\n");
+  }
+}  
+
