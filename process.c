@@ -457,3 +457,38 @@ void GetProcessState(long PID, INT32* state){
   }
 }  
 
+void osChangePriority(long PID, long NewPriority, long* ReturnError){
+
+  PROCESS_CONTROL_BLOCK* process;
+  
+  //Change Priority of currently running process
+  if(PID == -1){
+    process = GetCurrentPCB();
+    process->priority = NewPriority;
+    (*ReturnError) = 0;
+    return;
+  }
+
+   //check to see if process exists
+  process = GetPCB(PID);
+  if(process == NULL){
+    aprintf("Cannot change the priority of a process that DNE!\n\n");
+    (*ReturnError) = 1;
+    return;
+  }
+
+  //find the state of the process
+  INT32 ProcessState;
+  GetProcessState(PID, &ProcessState);
+  if(ProcessState == READY){
+    aprintf("Process is on the ready queue!\n\n");
+    ChangePriorityInReadyQueue(process, NewPriority);
+    (*ReturnError) = 1;
+    return;
+  }
+  else{
+    process->priority = NewPriority;
+    (*ReturnError) = 1;
+  }
+}
+

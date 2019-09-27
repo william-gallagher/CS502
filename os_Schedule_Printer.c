@@ -55,7 +55,7 @@ void FillTimer(SP_INPUT_DATA* SPInput){
   int Index = 0;
 
   //add lock
-  RQ_ELEMENT* tqe;
+  TQ_ELEMENT* tqe;
 
   INT32 Suspend_Until_Locked = TRUE;
   INT32 Sucess_Failure = -1;
@@ -63,7 +63,7 @@ void FillTimer(SP_INPUT_DATA* SPInput){
   READ_MODIFY(TIMER_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
 
   if(Sucess_Failure == FALSE){
-    aprintf("\n\nCould Not Obtain the Lock for the Ready Queue\n\n");
+    aprintf("\n\nCould Not Obtain the Lock for the Timer Queue\n\n");
   }
 
   
@@ -144,7 +144,7 @@ void FillSuspended(SP_INPUT_DATA* SPInput){
       if(pcb->state == SUSPENDED){
 	SuspendedCount++;
 	SPInput->ProcSuspendedProcessPIDs[Index] = (INT16)(pcb->idnum);
-	aprintf("\n%d is the id\n", pcb->idnum);
+
 	Index++;
       }
     }
@@ -152,15 +152,11 @@ void FillSuspended(SP_INPUT_DATA* SPInput){
   SPInput->NumberOfProcSuspendedProcesses = SuspendedCount;
 }
 
-void osPrintState(){
+void osPrintState(char* Action){
 
   SP_INPUT_DATA SPInput;
 
-  QPrint(ready_queue_id);
-  
-  char* str = "TEST STRI";
-
-  strcpy(SPInput.TargetAction, str);
+  strcpy(SPInput.TargetAction, Action);
 
   SPInput.CurrentlyRunningPID = GetCurrentPID();
   SPInput.TargetPID = 2;

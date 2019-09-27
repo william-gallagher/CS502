@@ -6,16 +6,16 @@
 #include "process.h"
 #include "os_globals.h"
 #include <unistd.h>
-//#include "z502.h"//make sure to remove
-
-
 
 int CreateSuspendQueue(){
   suspend_queue_id = QCreate("SQueue");
   return suspend_queue_id;
 }
 
-
+int CreateMessageQueue(){
+  message_queue_id = QCreate("MQueue");
+  return message_queue_id;
+}
 
 
 
@@ -43,7 +43,6 @@ void AddToReadyQueue(long context, long PID, void* PCB){
   INT32 Suspend_Until_Locked = TRUE;
   INT32 Sucess_Failure = -1;
 
-  //aprintf("\n\nWaiting to add to RQ\n\n");
   
   READ_MODIFY(READY_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
 
@@ -94,6 +93,50 @@ long RemoveFromReadyQueue(PROCESS_CONTROL_BLOCK* process){
 
   return 1;
 }
+
+
+
+
+
+
+
+
+
+
+/*
+Changes the priority of the process in the ready queue
+*/
+long ChangePriorityInReadyQueue(PROCESS_CONTROL_BLOCK* process, INT32 NewPriority){
+
+  //Check for access to Ready Queue
+  INT32 Suspend_Until_Locked = TRUE;
+  INT32 Sucess_Failure = -1;
+
+  READ_MODIFY(READY_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould Not Obtain the Lock for the Ready Lock\n\n");
+  }
+  
+  if((long)QRemoveItem(ready_queue_id, process->queue_ptr) == -1){
+    aprintf("\nProcess not found in Ready Queue\n\n");
+  }
+  process->priority = NewPriority;
+  QInsert(ready_queue_id, NewPriority, process->queue_ptr);
+    
+  // QPrint(ready_queue_id);
+  
+  READ_MODIFY(READY_LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould not give up Lock for Ready Lock\n\n");
+  }
+
+  return 1;
+}
+
+
+
 
 
 
@@ -218,6 +261,7 @@ void AddTimerToQueue(long context, long wakeup_time, void* PCB){
   TQ_ELEMENT* tqe = malloc(sizeof(TQ_ELEMENT));
   tqe->context = context;
   tqe->wakeup_time = wakeup_time;
+  tqe->PID = ((PROCESS_CONTROL_BLOCK *)PCB)->idnum;
   tqe->PCB = PCB;
 
   READ_MODIFY(TIMER_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
@@ -357,10 +401,8 @@ void StartTimer(long sleep_time){
       mmio.Field2 = mmio.Field3 =mmio.Field4 = 0;
       MEM_WRITE(Z502Timer, &mmio);
     }
-  }//don't need to restart if 
+  }//don't need to restart if new wakeup time is after NextWakeUp
 
-
-  
   //add tqe to the timer queue
   AddTimerToQueue(context, wakeup_time, GetCurrentPCB());
 
@@ -376,64 +418,56 @@ void StartTimer(long sleep_time){
     dispatcher();
 }
 
+/*
+Remove the first element of the Timer Queue. Check to see if the Timer needs to be reset. If there is another process with only a brief amount of time until its wake up time it is also put on the Ready Queue.
+*/
+
 void HandleTimerInterrupt(){
 
   MEMORY_MAPPED_IO mmio;
-  // TQ_ELEMENT* tqe = (TQ_ELEMENT *)QRemoveHead(timer_queue_id);
+  INT32 RemoveAgain;
 
-  TQ_ELEMENT* tq = RemoveTimerFromQueue();
-  
-  printf("Here is the context of the process removed from the Timer Queue %lx\n", tq->context);
-  /*
-    //get the current time
-    mmio.Mode = Z502ReturnValue;
-    mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
-    MEM_READ(Z502Clock, &mmio);
-    long CurrentTime = mmio.Field1;
+  do{
 
-    aprintf("Current time is %ld before adding timer context to ready queue\n", CurrentTime);
-  */
+    TQ_ELEMENT* tq = RemoveTimerFromQueue();
+    AddToReadyQueue(tq->context, tq->PID, tq->PCB);
+ 
+    //Check for another timer on the Queue
+    TQ_ELEMENT* next_timer = (TQ_ELEMENT*) QNextItemInfo(timer_queue_id);
 
-  AddToReadyQueue(tq->context, tq->PID, tq->PCB);
-  /*
-      //get the current time
-    mmio.Mode = Z502ReturnValue;
-    mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
-    MEM_READ(Z502Clock, &mmio);
-    CurrentTime = mmio.Field1;
-
-    aprintf("Current time is %ld after adding timer context to ready queue\n", CurrentTime);
-  */
-  //reset timer if another timer is on the queue
-  TQ_ELEMENT* next_timer = (TQ_ELEMENT*) QNextItemInfo(timer_queue_id);
-  if((long)next_timer != -1){
-
-    
-    //get the current time
-    mmio.Mode = Z502ReturnValue;
-    mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
-    MEM_READ(Z502Clock, &mmio);
-    long CurrentTime = mmio.Field1;
-
-    long WakeTime = next_timer->wakeup_time;
-    aprintf("\n\nThe current time is %ld and the wakeup time is %ld\n\n", CurrentTime, WakeTime);
-
-    //reset timer 
-    mmio.Mode = Z502Start;
-    mmio.Field1 = WakeTime - CurrentTime;   
-    mmio.Field2 = mmio.Field3 = 0;
-    MEM_WRITE(Z502Timer, &mmio);
-
-    //check return of start timer
-    if(mmio.Field4 != ERR_SUCCESS){
-      printf("Error starting the timer\n\n");
+    //no more processes on the Timer Queue
+    if((long)next_timer == -1){
+      RemoveAgain = FALSE;
     }
-  }
-  else{
-    printf("\nNo more timers on Q\n");
-  }
+    //There is another process of Timer Queue
+    else{
+      //get the current time
+      mmio.Mode = Z502ReturnValue;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
+      MEM_READ(Z502Clock, &mmio);
+      long CurrentTime = mmio.Field1;
 
-    
+      long WakeTime = next_timer->wakeup_time;
+      aprintf("\n\nThe current time is %ld and the wakeup time is %ld\n\n", CurrentTime, WakeTime);
+
+      if(WakeTime - CurrentTime > 10){
+	//reset timer 
+	mmio.Mode = Z502Start;
+	mmio.Field1 = WakeTime - CurrentTime;   
+	mmio.Field2 = mmio.Field3 = 0;
+	MEM_WRITE(Z502Timer, &mmio);
+
+	//check return of start timer
+	if(mmio.Field4 != ERR_SUCCESS){
+	  printf("Error starting the timer\n\n");
+	}
+	RemoveAgain = FALSE;
+      }
+      else{ //WakeTime - Current <= 10
+	RemoveAgain = TRUE;
+      }
+    }
+  }while(RemoveAgain == TRUE);
   
   
 }
@@ -483,7 +517,7 @@ Adds to Disk Queue. head_or_tail indicates whether to add to the head or tail of
 void AddToDiskQueue(long disk_id, DQ_ELEMENT* dqe){
 
    
-  //Check for access to Ready Queue
+  //Check for access to Disk Queue
   INT32 Suspend_Until_Locked = TRUE;
   INT32 Sucess_Failure = -1;
 
@@ -507,3 +541,124 @@ void AddToDiskQueue(long disk_id, DQ_ELEMENT* dqe){
 
 }
 
+
+
+//======================================================================
+/*
+
+Message Buffer Functions
+
+*/
+
+
+
+
+/*
+Counts the number of messages in the Message Buffer
+*/
+long CountMessagesInBuffer(){
+
+  long MessageCount = 0;
+  long Index = 0;
+  MQ_ELEMENT *mqe;
+  
+  INT32 Suspend_Until_Locked = TRUE;
+  INT32 Sucess_Failure = -1;
+
+  READ_MODIFY(MESSAGE_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould Not Obtain the Lock for Message Buffer %ld\n\n");
+  }
+
+  mqe = QWalk(message_queue_id, Index);
+  
+  while((long)mqe != -1){
+    Index++;
+    MessageCount++;
+    mqe = QWalk(message_queue_id, Index);
+  }
+
+  READ_MODIFY(MESSAGE_LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\n Failure to give up the Lock for Message Buffer\n\n");
+  }
+
+  return MessageCount;
+}
+
+
+void AddToMessageBuffer(MQ_ELEMENT* mqe){
+  
+  INT32 Suspend_Until_Locked = TRUE;
+  INT32 Sucess_Failure = -1;
+
+  READ_MODIFY(MESSAGE_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould Not Obtain the Lock for Message Buffer %ld\n\n");
+  }
+
+  QInsertOnTail(message_queue_id, mqe);
+
+  READ_MODIFY(MESSAGE_LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\n Failure to give up the Lock for Message Buffer\n\n");
+  }
+}
+
+
+void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long* ReturnError){
+
+    //check to see if process exists
+  PROCESS_CONTROL_BLOCK* process = GetPCB(TargetPID);
+  if(process == NULL){
+    aprintf("Cannot send message to process of a PID that DNE!\n\n");
+    (*ReturnError) = 1;
+    return;
+  }
+
+  //Make sure MessageLength is in the right range
+  if(MessageLength < 0 || MessageLength > MAX_MESSAGE_LENGTH){
+    aprintf("Message Length out of range!\n\n");
+    (*ReturnError) = 1;
+    return;
+  }
+
+  //Check to make sure there is room in the Message Buffer
+  if(CountMessagesInBuffer() >= MAX_MESSAGES_IN_BUFFER){
+    aprintf("Message Buffer Full!\n\n");
+    (*ReturnError) = 1;
+    return;
+  }
+
+  MQ_ELEMENT *mqe = malloc(sizeof(MQ_ELEMENT));
+  AddToMessageBuffer(mqe);
+
+  //return success
+  (*ReturnError) = 0;
+}
+
+void osReceiveMessage(long SourcePID, char* MessageBuffer,
+			long MessageLength, long* SenderPID,
+		      long* ReturnError){
+
+  //check to see if process exists
+  PROCESS_CONTROL_BLOCK* process = GetPCB(SourcePID);
+  if(process == NULL){
+    aprintf("Cannot receive message from process that DNE!\n\n");
+    (*ReturnError) = 1;
+    return;
+  }
+
+  //Make sure MessageLength is in the right range
+  if(MessageLength < 0 || MessageLength > MAX_MESSAGE_LENGTH){
+    aprintf("Can't Receive Message Length out of range!\n\n");
+    (*ReturnError) = 1;
+    return;
+  }
+
+  (*ReturnError) = 0;
+}

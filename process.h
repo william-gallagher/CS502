@@ -46,3 +46,7 @@ void* GetPCBContext(long context);
 void ChangeProcessState(long PID, INT32 new_state);
 
 void GetProcessState(long PID, INT32* state);
+
+void osChangePriority(long PID, long NewPriority, long* ReturnError);
+
+void* GetPCB(long PID);

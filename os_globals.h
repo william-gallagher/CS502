@@ -7,6 +7,11 @@ The include file for all the OS wide structures and defines
 //Should there be a max number of processes????
 #define MAXPROCESSES 15
 
+//No idea what this should be
+#define MAX_MESSAGE_LENGTH 500
+
+#define MAX_MESSAGES_IN_BUFFER 10
+
 #ifndef A_H
 #define A_H
 
@@ -102,6 +107,16 @@ DQ_ELEMENT* disk_process[MAX_NUMBER_OF_DISKS];
 
 #define PROC_LOCK_BASE  TIMER_LOCK + 1
 
+//Message Queue
+int message_queue_id;
+#define MESSAGE_LOCK MEMORY_INTERLOCK_BASE+30
+
+typedef struct{
+
+  long target_pid;
+  char* message;
+  long message_length;
+}MQ_ELEMENT;
 
 
 #endif //end my guard

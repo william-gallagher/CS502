@@ -3,12 +3,26 @@
 #include "global.h"
 #include "os_globals.h"
 
+
+int CreateMessageQueue();
 int CreateReadyQueue();
+
+void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long* ReturnError);
+
+void osReceiveMessage(long SourcePID, char* MessageBuffer,
+			long MessageLength, long* SenderPID,
+		      long* ReturnError);
+
+//long CountMessagesInBuffer();
+
+//void AddToMessageBuffer(MQ_ELEMENT *mqe);
 
 //can't figure out how call works right now
 void dispatcher();
 
 long RemoveFromReadyQueue(PROCESS_CONTROL_BLOCK* process);
+
+long ChangePriorityInReadyQueue(PROCESS_CONTROL_BLOCK* process, INT32 NewPriority);
 
 void AddToReadyQueue(long context, long PID, void* PCB);
 

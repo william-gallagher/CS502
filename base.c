@@ -70,11 +70,11 @@ void InterruptHandler(void) {
     INT32 Status;
 
     MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
-    aprintf("\nWelcome to the IH\n\n");
+    //aprintf("\nWelcome to the IH\n\n");
     long CurrentTime;
 
     	mmio.Mode = Z502ReturnValue;
-	mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
+	mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
 	//	MEM_READ(Z502Clock, &mmio);
 	// CurrentTime = mmio.Field1;
 
@@ -105,7 +105,7 @@ void InterruptHandler(void) {
 
 
       if(DeviceID == TIMER_INTERRUPT){
-	aprintf("must handle the timer interrupt\n\n");
+	//aprintf("must handle the timer interrupt\n\n");
 	    //get the current time
 	mmio.Mode = Z502ReturnValue;
 	mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
@@ -180,7 +180,7 @@ void FaultHandler(void) {
 void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
   //just test the state printer
-  osPrintState();
+  osPrintState("Call SVC");
 
   short call_type;
   static short do_print = 10;
@@ -189,12 +189,13 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
   call_type = (short) SystemCallData->SystemCallNumber;
   if (do_print > 0) {
-    aprintf("SVC handler: %s\n", call_names[call_type]);
+    // aprintf("SVC handler: %s\n", call_names[call_type]);
     for (i = 0; i < SystemCallData->NumberOfArguments - 1; i++) {
       //Value = (long)*SystemCallData->Argument[i];
-      aprintf("Arg %d: Contents = (Decimal) %8ld,  (Hex) %8lX\n", i,
+      /* aprintf("Arg %d: Contents = (Decimal) %8ld,  (Hex) %8lX\n", i,
 	      (unsigned long) SystemCallData->Argument[i],
 	      (unsigned long) SystemCallData->Argument[i]);
+      */
     }
     do_print--;
   }
@@ -408,7 +409,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
     case SYSNUM_SUSPEND_PROCESS:
 
-      printf("\n\nSuspend Process\n\n");
+      aprintf("\n\nSuspend Process\n\n");
       PID = (long)SystemCallData->Argument[0];
       return_error = (long *)SystemCallData->Argument[1];
       osSuspendProcess(PID, return_error);
@@ -417,11 +418,44 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
     case SYSNUM_RESUME_PROCESS:
 
-      printf("\n\nResume Process\n\n");
+      aprintf("\n\nResume Process\n\n");
       PID = (long)SystemCallData->Argument[0];
       return_error = (long *)SystemCallData->Argument[1];
       osResumeProcess(PID, return_error);
 
+      break;
+
+    case SYSNUM_CHANGE_PRIORITY:
+
+      aprintf("\n\n\n\n\n\n\n\n\nChanging A Priority\n\n");
+      PID = (long)SystemCallData->Argument[0];
+      long NewPriority = (long)SystemCallData->Argument[1];
+      long* ReturnError = (long *)SystemCallData->Argument[2];
+      osChangePriority(PID, NewPriority, ReturnError);
+      
+      break;
+
+    case SYSNUM_SEND_MESSAGE:
+
+      aprintf("\n\n\n\n\n\nSending a Message\n\n\n\n");
+
+      long TargetPID = (long)SystemCallData->Argument[0];
+      char *MessageBuffer = (char *)SystemCallData->Argument[1];
+      long MessageLength = (long)SystemCallData->Argument[2];
+      ReturnError = (long *)SystemCallData->Argument[3];
+      osSendMessage(TargetPID, MessageBuffer, MessageLength, ReturnError);
+      break;
+
+    case SYSNUM_RECEIVE_MESSAGE:
+
+      aprintf("\n\n\n\n\n\nReceiving a Message\n\n\n\n");
+
+      long SourcePID = (long)SystemCallData->Argument[0];
+      MessageBuffer = (char *)SystemCallData->Argument[1];
+      MessageLength = (long)SystemCallData->Argument[2];
+      long *SenderPID = (long *)SystemCallData->Argument[3];
+      ReturnError = (long *)SystemCallData->Argument[4];
+      osReceiveMessage(SourcePID, MessageBuffer, MessageLength, SenderPID, ReturnError);
       break;
      
        
@@ -501,7 +535,7 @@ void osInit(int argc, char *argv[]) {
     
     //Timer Queue
     if(CreateTimerQueue() == -1){
-      printf("\n\nUnable to create Timer Queue!\n\n");
+      aprintf("\n\nUnable to create Timer Queue!\n\n");
     }
     //Disk Queues
     for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
@@ -513,14 +547,18 @@ void osInit(int argc, char *argv[]) {
     
     //Ready Queue
     if(CreateReadyQueue() == -1){
-      printf("\n\nUnable to create Ready Queue!\n\n");
+      aprintf("\n\nUnable to create Ready Queue!\n\n");
     }
 
     //Suspended Queue
     if(CreateSuspendQueue() == -1){
-      printf("\n\nUnable to create Suspended Queue!\n\n");
+      aprintf("\n\nUnable to create Suspended Queue!\n\n");
     }
 
+    //Message Queue
+    if(CreateMessageQueue() == -1){
+      aprintf("\n\nUnable to create Message Queue!\n\n");
+    }
 
     
     if ((argc > 1) && (strcmp(argv[1], "sample") == 0)) {
