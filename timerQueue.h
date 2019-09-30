@@ -10,8 +10,9 @@ int CreateReadyQueue();
 void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long* ReturnError);
 
 void osReceiveMessage(long SourcePID, char* MessageBuffer,
-			long MessageLength, long* SenderPID,
-		      long* ReturnError);
+		      long MessRecLength, long* MessSendLength,
+		      long* SenderPID, long* ReturnError);
+
 
 //long CountMessagesInBuffer();
 

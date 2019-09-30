@@ -452,10 +452,11 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
       long SourcePID = (long)SystemCallData->Argument[0];
       MessageBuffer = (char *)SystemCallData->Argument[1];
-      MessageLength = (long)SystemCallData->Argument[2];
-      long *SenderPID = (long *)SystemCallData->Argument[3];
-      ReturnError = (long *)SystemCallData->Argument[4];
-      osReceiveMessage(SourcePID, MessageBuffer, MessageLength, SenderPID, ReturnError);
+      long MessRecLength = (long)SystemCallData->Argument[2];
+      long* MessSendLength = (long *)SystemCallData->Argument[3];
+      long *SenderPID = (long *)SystemCallData->Argument[4];
+      ReturnError = (long *)SystemCallData->Argument[5];
+      osReceiveMessage(SourcePID, MessageBuffer, MessRecLength, MessSendLength, SenderPID, ReturnError);
       break;
      
        

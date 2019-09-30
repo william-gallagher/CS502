@@ -35,12 +35,13 @@ void CreatePRO_INFO(){
   PRO_INFO->nextid = 0;
 }
 
-long osCreateProcess(char* name, long context, INT32 parent){
+long osCreateProcess(char* name, long context, INT32 parent, long Priority){
   
   PROCESS_CONTROL_BLOCK* new_pcb = &PRO_INFO->PCB[PRO_INFO->nextid];
   new_pcb->idnum = PRO_INFO->nextid;
   PRO_INFO->nextid++; //eventually need a more sophisticated method for reusing pid's
   strcpy(new_pcb->name, name);
+  new_pcb->priority = Priority;
   new_pcb->context = context;
   new_pcb->in_use = 1;
   new_pcb->parent = parent;
@@ -327,7 +328,7 @@ int CheckProcessCount(){
   return 0;
 }
 
-void CreateProcess(char* name, long start_address, long priority, INT32 parent, long* process_id, long* return_error){
+void CreateProcess(char* name, long start_address, long Priority, INT32 parent, long* process_id, long* return_error){
 
   long context;
   long PID;
@@ -344,7 +345,7 @@ void CreateProcess(char* name, long start_address, long priority, INT32 parent, 
   } 
 
   //check for proper priority. Not 100% sure what improper priority is
-  if(priority <= 0){
+  if(Priority <= 0){
     printf("\n\nImproper Priority\n\n");
     *return_error = 1;  //set error message
     return;
@@ -365,7 +366,7 @@ void CreateProcess(char* name, long start_address, long priority, INT32 parent, 
 
   context = mmio.Field1;//Field1 returns the context from initialize context
   printf("\n\nhere is the new context %lx\n\n", context);
-  PID = osCreateProcess(name, context, parent);
+  PID = osCreateProcess(name, context, parent, Priority);
   
   
   *process_id = PID;  //set error message  

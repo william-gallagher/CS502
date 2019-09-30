@@ -35,6 +35,7 @@ typedef struct{
   char name[100];
   INT32 priority;
   INT32 state;
+  INT32 waiting_for_message;
   INT32 LOCK;
   void* queue_ptr;
 } PROCESS_CONTROL_BLOCK;
@@ -114,7 +115,8 @@ int message_queue_id;
 typedef struct{
 
   long target_pid;
-  char* message;
+  long sender_pid;
+  char message[MAX_MESSAGE_LENGTH];
   long message_length;
 }MQ_ELEMENT;
 

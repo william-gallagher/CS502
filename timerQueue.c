@@ -39,6 +39,8 @@ void AddToReadyQueue(long context, long PID, void* PCB){
   process->queue_ptr = (void *)rqe; //keep?
 
   
+  long Priority = process->priority;
+  
   //Check for access to Ready Queue
   INT32 Suspend_Until_Locked = TRUE;
   INT32 Sucess_Failure = -1;
@@ -50,7 +52,9 @@ void AddToReadyQueue(long context, long PID, void* PCB){
     aprintf("\n\nCould Not Obtain the Lock for the Ready Queue\n\n");
   }
 
-  QInsertOnTail(ready_queue_id, (void *) rqe);
+  QInsert(ready_queue_id, Priority, (void *) rqe);
+
+  // QInsertOnTail(ready_queue_id, (void *) rqe);
   // QPrint(ready_queue_id);
   
   READ_MODIFY(READY_LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
@@ -199,7 +203,7 @@ long CheckReadyQueue(){
     MEM_READ(Z502Clock, &mmio);
     long CurrentTime = mmio.Field1;
 
-    aprintf("Time of check %ld\n\n", CurrentTime);
+    //aprintf("Time of check %ld\n\n", CurrentTime);
   
   if(result == -1){
     return -1;
@@ -609,15 +613,62 @@ void AddToMessageBuffer(MQ_ELEMENT* mqe){
   }
 }
 
+MQ_ELEMENT* GetMessageFromBuffer(long SourcePID, long CurrentPID){
+
+  aprintf("In GetMessage %ld is the SenderPID that I am looking for\n", SourcePID);
+  
+  MQ_ELEMENT* mqe;
+  int Index = 0;
+
+  INT32 Suspend_Until_Locked = TRUE;
+  INT32 Sucess_Failure = -1;
+
+  READ_MODIFY(MESSAGE_LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\nCould Not Obtain the Lock for the Message Buffer\n\n");
+  }
+
+  QPrint(message_queue_id);
+  
+  mqe = QWalk(message_queue_id, Index);
+  
+  while((long)mqe != -1){
+    aprintf("Here is the source pid %ld\nhere is the target pid %ld\n\n", mqe->sender_pid,  mqe->target_pid);
+    if((mqe->target_pid == CurrentPID && mqe->sender_pid == SourcePID)||
+       ((mqe->target_pid == -1 || mqe->target_pid == CurrentPID)  && SourcePID == -1)){
+
+      mqe = QRemoveItem(message_queue_id, (void *)mqe);
+      aprintf("Found a message! %ld is the PID \n\n", mqe->target_pid);
+      break;
+    }
+    Index++;
+    mqe = QWalk(message_queue_id, Index);
+  }
+
+  READ_MODIFY(MESSAGE_LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
+
+  if(Sucess_Failure == FALSE){
+    aprintf("\n\n Failure to give up Message Lock\n\n");
+  }
+  return mqe;
+
+}
+  
+
 
 void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long* ReturnError){
 
+  PROCESS_CONTROL_BLOCK *process;
+  
     //check to see if process exists
-  PROCESS_CONTROL_BLOCK* process = GetPCB(TargetPID);
-  if(process == NULL){
-    aprintf("Cannot send message to process of a PID that DNE!\n\n");
-    (*ReturnError) = 1;
-    return;
+  if(TargetPID != -1){
+    process = GetPCB(TargetPID);
+    if(process == NULL){
+      aprintf("Cannot send message to process of a PID that DNE! PID %ld\n\n", TargetPID);
+      (*ReturnError) = 1;
+      return;
+    }
   }
 
   //Make sure MessageLength is in the right range
@@ -635,30 +686,72 @@ void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long
   }
 
   MQ_ELEMENT *mqe = malloc(sizeof(MQ_ELEMENT));
+  mqe->target_pid = TargetPID;
+  strcpy(mqe->message, MessageBuffer);
+  mqe->message_length = MessageLength;
+  mqe->sender_pid = GetCurrentPID();
   AddToMessageBuffer(mqe);
+
+  //check to see what the state of the target process is
+  if(TargetPID != -1){
+    INT32 State;
+    long ReturnErrorResume;
+  
+    GetProcessState(TargetPID, &State);
+    if(State == SUSPENDED){
+      osResumeProcess(TargetPID, &ReturnErrorResume);
+      if(ReturnErrorResume == 1){
+	aprintf("Failure to Resume Process in osSendMessage\n\n");
+      }
+      ChangeProcessState(TargetPID, READY);
+    }
+
+    //set flag in PCB to let process know it has a message waiting
+    process->waiting_for_message = TRUE;
+  }
 
   //return success
   (*ReturnError) = 0;
 }
 
 void osReceiveMessage(long SourcePID, char* MessageBuffer,
-			long MessageLength, long* SenderPID,
-		      long* ReturnError){
+		      long MessRecLength, long* MessSendLength,
+		      long* SenderPID, long* ReturnError){
 
-  //check to see if process exists
-  PROCESS_CONTROL_BLOCK* process = GetPCB(SourcePID);
-  if(process == NULL){
-    aprintf("Cannot receive message from process that DNE!\n\n");
-    (*ReturnError) = 1;
-    return;
+  long CurrentPID = GetCurrentPID();
+  
+  //check to see if process exists. -1 always allowed.
+  if(SourcePID != -1){
+    
+    PROCESS_CONTROL_BLOCK* process = GetPCB(SourcePID);;
+
+    if(process == NULL){
+      aprintf("Cannot receive message from process that DNE!\n\n");
+      (*ReturnError) = 1;
+      return;
+    }
   }
 
   //Make sure MessageLength is in the right range
-  if(MessageLength < 0 || MessageLength > MAX_MESSAGE_LENGTH){
+  if(MessRecLength < 0 || MessRecLength > MAX_MESSAGE_LENGTH){
     aprintf("Can't Receive Message Length out of range!\n\n");
     (*ReturnError) = 1;
     return;
   }
 
+  //check Message Buffer for message. If it there is none suspend process
+  aprintf("Before Check\n\n");
+  MQ_ELEMENT *mqe = GetMessageFromBuffer(SourcePID, CurrentPID);
+  aprintf("Returned from checking for message\n\n");
+  
+  if((long)mqe == -1){
+    ChangeProcessState(CurrentPID, SUSPENDED);
+    dispatcher();
+    mqe = GetMessageFromBuffer(SourcePID, CurrentPID);
+  }
+
+  strcpy(MessageBuffer, mqe->message);
+  (*MessSendLength) = mqe->message_length;
+  (*SenderPID) = mqe->sender_pid;
   (*ReturnError) = 0;
 }

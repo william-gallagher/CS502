@@ -10,7 +10,7 @@ void ProcessesState();
 //need to remember to free at end somehow
   void CreatePRO_INFO();
   
-long osCreateProcess(char* name, long context, INT32 parent);
+long osCreateProcess(char* name, long context, INT32 parent, long Priority);
 
 void osSuspendProcess(long PID, long* return_error);
 
