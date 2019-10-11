@@ -32,7 +32,7 @@
     something that should be handed in with the project.
     Change FALSE to TRUE to enable a feature.
 ******************************************************************/
-#define         DO_DEVICE_DEBUG                 TRUE
+#define         DO_DEVICE_DEBUG                 FALSE
 #define         DO_MEMORY_DEBUG                 FALSE
 
 //  These four are very useful for my debugging the hardware,

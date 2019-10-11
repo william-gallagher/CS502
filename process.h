@@ -1,3 +1,6 @@
+#ifndef A_H1
+#define A_H1
+
 #include "os_globals.h"
 
 //Include file for everything to do with processes
@@ -8,7 +11,7 @@ void ProcessesState();
 
 
 //need to remember to free at end somehow
-  void CreatePRO_INFO();
+void CreatePRO_INFO();
   
 long osCreateProcess(char* name, long context, INT32 parent, long Priority);
 
@@ -16,7 +19,9 @@ void osSuspendProcess(long PID, long* return_error);
 
 void osResumeProcess(long PID, long* return_error);
 
-void getProcessID(SYSTEM_CALL_DATA* scd);
+void osTerminateProcess(long TargetPID, long *ReturnError);
+
+void GetProcessID(char ProcessName[], long *PID, long *ReturnError);
 
 long GetCurrentPID();
 
@@ -30,9 +35,10 @@ int CheckProcessName(char* name);
  */
 int CheckProcessCount();
 
-//need a getcontext function
 
 void CreateProcess(char* name, long start_address, long priority, INT32 parent, long* process_id, long* return_error);
+
+INT32 CheckActiveProcess();
 
 void TerminateProcess(long process_id);
 
@@ -50,3 +56,5 @@ void GetProcessState(long PID, INT32* state);
 void osChangePriority(long PID, long NewPriority, long* ReturnError);
 
 void* GetPCB(long PID);
+
+#endif //end my guard

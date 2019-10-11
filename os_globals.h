@@ -4,6 +4,13 @@ The include file for all the OS wide structures and defines
 */
 
 
+
+
+#ifndef A_H
+#define A_H
+
+
+
 //Should there be a max number of processes????
 #define MAXPROCESSES 15
 
@@ -12,8 +19,7 @@ The include file for all the OS wide structures and defines
 
 #define MAX_MESSAGES_IN_BUFFER 10
 
-#ifndef A_H
-#define A_H
+#define MAX_NAME_LENGTH 100
 
 //maybe #define ACTIVE is better than RUNNING???
 //define the states of a process
@@ -24,15 +30,16 @@ The include file for all the OS wide structures and defines
 #define DISK 4
 #define WAITING_TO_SUSPEND_TIMER 5
 #define WAITING_TO_SUSPEND_DISK 6
+#define SUSPENDED_WAITING_FOR_MESSAGE 7
 
-//name has limit of 100 for now. Seems like a hack
+
 //should priority be an INT32 or long??????
 typedef struct{
   INT32 in_use;
   INT32 parent;
   long idnum;
   long context;
-  char name[100];
+  char name[MAX_NAME_LENGTH];
   INT32 priority;
   INT32 state;
   INT32 waiting_for_message;
@@ -60,9 +67,6 @@ typedef struct{
 //#define SUSPEND_LOCK MEMORY_INTERLOCK_BASE + 2;
 int suspend_queue_id;
 
-
-
-
 //ready queue
 
 typedef struct{
@@ -87,9 +91,14 @@ typedef struct{
 int timer_queue_id;
 #define TIMER_LOCK  READY_LOCK + 1
 
+#define READ_DISK 0
+#define WRITE_DISK 1
+
 //struct for holding context while disk works on reading and writing
 typedef struct{
 
+  long disk_action;//write == 1 read == 0
+  
   long disk_id;
   long disk_sector;
   long disk_address;

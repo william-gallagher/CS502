@@ -35,6 +35,9 @@
 //My includes
 #include "process.h"
 #include "timerQueue.h"
+#include "readyQueue.h"
+#include "diskQueue.h"
+#include "messageBuffer.h"
 #include "os_globals.h"
 #include "os_Schedule_Printer.h"
 
@@ -70,59 +73,60 @@ void InterruptHandler(void) {
     INT32 Status;
 
     MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
-    //aprintf("\nWelcome to the IH\n\n");
-    long CurrentTime;
-
-    	mmio.Mode = Z502ReturnValue;
-	mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
-	//	MEM_READ(Z502Clock, &mmio);
-	// CurrentTime = mmio.Field1;
-
-	//aprintf("Current time at the beginnning of the ih is %ld\n", CurrentTime);
+   
 	
     // Get cause of interrupt
     mmio.Mode = Z502GetInterruptInfo;
     mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
     MEM_READ(Z502InterruptDevice, &mmio);
 
+    
+    
     if(mmio.Field4 != ERR_SUCCESS){
       aprintf("\n\nPROB WITH INTERRUPT\n\n");
     }
     while(mmio.Field4 == ERR_SUCCESS) {
       DeviceID = mmio.Field1;
       Status = mmio.Field2;
-      /*
-        aprintf( "The InterruptDevice call in the InterruptHandler has failed.\n");
-        aprintf("The DeviceId and Status that were returned are not valid.\n");
-	}
-      */
+
+      PrintInterrupt(DeviceID, Status);   
+   
       // HAVE YOU CHECKED THAT THE INTERRUPTING DEVICE FINISHED WITHOUT ERROR?
 
 
 
-      aprintf("InterruptHandler: Found device ID %d with status %d\n",
-	      DeviceID, Status);
-
-
       if(DeviceID == TIMER_INTERRUPT){
-	//aprintf("must handle the timer interrupt\n\n");
-	    //get the current time
-	mmio.Mode = Z502ReturnValue;
-	mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
-	//	MEM_READ(Z502Clock, &mmio);
-        CurrentTime = mmio.Field1;
-
-	//	aprintf("Current time is %ld in ih\n", CurrentTime);
+ 
 	HandleTimerInterrupt();
       }
+      
       else if(DeviceID >= DISK_INTERRUPT &&
 	      DeviceID <= DISK_INTERRUPT + MAX_NUMBER_OF_DISKS -1){
 
 	long disk_id = DeviceID - DISK_INTERRUPT;
-	aprintf("\n\n\nWe have a disk interrupt %d\n\n\n", disk_id);
-	DQ_ELEMENT* dqe = disk_process[disk_id];
+	DQ_ELEMENT* dqe = RemoveFromDiskQueueHead(disk_id);
 	
 	AddToReadyQueue(dqe->context, dqe->PID, dqe->PCB);
+	free(dqe);
+	//need to check for another element on the disk queue
+	dqe = CheckDiskQueue(disk_id);
+	if((long)dqe != -1){
+	  
+	
+	  //don't need to check if disk is busy- can't be because we just used it
+	  if(dqe->disk_action == READ_DISK){  	
+	    mmio.Mode = Z502DiskRead;
+	  }
+	  else{
+	    mmio.Mode = Z502DiskWrite;
+	  }
+	  mmio.Field1 = dqe->disk_id;
+	  mmio.Field2 = dqe->disk_sector;
+	  mmio.Field3 = dqe->disk_address;
+	
+	  MEM_WRITE(Z502Disk, &mmio);
+	}
+	
       }
       
       //see if there is another interrupt
@@ -160,8 +164,8 @@ void FaultHandler(void) {
     // thus limiting the output.
     how_many_fault_entries++; 
     if (remove_this_from_your_fault_code && (how_many_fault_entries < 10)) {
-            aprintf("FaultHandler: Found device ID %d with status %d\n",
-                            (int) mmio.Field1, (int) mmio.Field2);
+           aprintf("FaultHandler: Found device ID %d with status %d\n",
+                          (int) mmio.Field1, (int) mmio.Field2);
     }
     
 } // End of FaultHandler
@@ -180,266 +184,127 @@ void FaultHandler(void) {
 void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
   //just test the state printer
-  osPrintState("Call SVC");
+   osPrintState("Call SVC");
 
   short call_type;
-  static short do_print = 10;
-  short i;
-  MEMORY_MAPPED_IO mmio;
 
   call_type = (short) SystemCallData->SystemCallNumber;
-  if (do_print > 0) {
-    // aprintf("SVC handler: %s\n", call_names[call_type]);
-    for (i = 0; i < SystemCallData->NumberOfArguments - 1; i++) {
-      //Value = (long)*SystemCallData->Argument[i];
-      /* aprintf("Arg %d: Contents = (Decimal) %8ld,  (Hex) %8lX\n", i,
-	      (unsigned long) SystemCallData->Argument[i],
-	      (unsigned long) SystemCallData->Argument[i]);
-      */
-    }
-    do_print--;
-  }
   
-  long disk_id;
-  long disk_sector;
-  long disk_address;
-  long sleep_time;
-  DQ_ELEMENT* dq;
-  PROCESS_CONTROL_BLOCK* curr_proc;
+  long Arguments[MAX_NUMBER_ARGUMENTS];
+  for (INT32 i = 0; i < SystemCallData->NumberOfArguments - 1; i++) {
+    Arguments[i] = (long)SystemCallData->Argument[i];
+  }
+
+  PrintSVC(Arguments, call_type);
+
+  long *TimeOfDay;
+  char ProcessName[MAX_NAME_LENGTH];
+
+  long NewPriority;
+  long *PID;
+  long *ReturnError;
+
+  long TargetPID;
+  long PID2; //need better name
+  
+  long DiskID;
+  long DiskSector;
+  long DiskAddress;
+  long SleepTime;
+
     
     switch(call_type){
       
     case SYSNUM_GET_TIME_OF_DAY:
-      mmio.Mode = Z502ReturnValue;
-      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-      MEM_READ(Z502Clock, &mmio);
-      *(long *)SystemCallData->Argument[0] = mmio.Field1;
+ 
+      TimeOfDay = (long *)SystemCallData->Argument[0];
+      GetTimeOfDay(TimeOfDay);      
       break;
 
-      //added in for test 1
     case SYSNUM_GET_PROCESS_ID:
-      getProcessID(SystemCallData);
+
+      strcpy(ProcessName, (char *)SystemCallData->Argument[0]);
+      PID = (long *)SystemCallData->Argument[1];
+      ReturnError = (long *)SystemCallData->Argument[2];
+      GetProcessID(ProcessName, PID, ReturnError);
       break;
 
-      //added in for test 2
     case SYSNUM_SLEEP:
-
-      //printf("\n\n\nHere at SYSCALL Sleep\n\n\n");
       
-      sleep_time = (long)SystemCallData->Argument[0];
-      StartTimer(sleep_time);
+      SleepTime = (long)SystemCallData->Argument[0];
+      StartTimer(SleepTime);
       break;
       
     case SYSNUM_TERMINATE_PROCESS:
 
-      aprintf("");
-      long PID = GetCurrentPID();
-      
-      if((long)SystemCallData->Argument[0] == -1){
-	printf("Terminate Current process!\n");
-
-	TerminateProcess(PID);
-	mmio.Mode = Z502Action;
-	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-	MEM_WRITE(Z502Halt, &mmio);
-      }
-      if((long)SystemCallData->Argument[0] == -2){
-	printf("Terminate current process and all children\n\n");
-	TerminateChildren(PID);
-	TerminateProcess(PID);
-	//
-	//-----------! Can't halt if there are running processes
-	//
-	mmio.Mode = Z502Action;
-	mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-	MEM_WRITE(Z502Halt, &mmio);
-      }
-      
-
-      *(long *)SystemCallData->Argument[1] = 0;  //set error message
+      TargetPID = (long)SystemCallData->Argument[0];
+      ReturnError = (long *)SystemCallData->Argument[2];
+      osTerminateProcess(TargetPID, ReturnError);
       break;
       
     case SYSNUM_PHYSICAL_DISK_READ:
 
-      disk_id = (long)SystemCallData->Argument[0];
-      disk_sector = (long)SystemCallData->Argument[1];
-      disk_address = (long)SystemCallData->Argument[2];
+      DiskID = (long)SystemCallData->Argument[0];
+      DiskSector = (long)SystemCallData->Argument[1];
+      DiskAddress = (long)SystemCallData->Argument[2];
+      osDiskReadRequest(DiskID, DiskSector, DiskAddress);
+      break;
 
-
-
-      //curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
-      curr_proc = GetCurrentPCB();
-      
-      //create struct for disk queue
-      dq = malloc(sizeof(DQ_ELEMENT));
-      dq->context = curr_proc->context;
-      dq->PID = curr_proc->idnum;
-      dq->PCB = curr_proc;
-    
-      long status;
-      CheckDiskStatus(disk_id, &status);
-
-      if(status == DEVICE_FREE){
-	aprintf("\nDisk %d is free\n\n", disk_id);
-	aprintf("Proceeding with the read\n");
-
-	//this is where to store the information about the process
-	disk_process[disk_id] = dq;
-	
-	mmio.Mode = Z502DiskRead;
-	mmio.Field1 = disk_id;
-	mmio.Field2 = disk_sector;
-	mmio.Field3 = disk_address;
-	
-	MEM_WRITE(Z502Disk, &mmio);
-     
-      }
-      else{
-	aprintf("\nDevice not free for read\n\n");
-
-	dq->disk_id = disk_id;
-	dq->disk_sector = disk_sector;
-	dq->disk_address = disk_address;
-	AddToDiskQueue(disk_id, dq);
-      }
-
-       //set process state to DISK
-      ChangeProcessState(GetCurrentPID(), DISK);
-  
-      dispatcher();
-     
-       break;
-       
     case SYSNUM_PHYSICAL_DISK_WRITE:
 
-      disk_id = (long)SystemCallData->Argument[0];
-      disk_sector = (long)SystemCallData->Argument[1];
-      disk_address = (long)SystemCallData->Argument[2];
-
-     //curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
-      curr_proc = GetCurrentPCB();
+      DiskID = (long)SystemCallData->Argument[0];
+      DiskSector = (long)SystemCallData->Argument[1];
+      DiskAddress = (long)SystemCallData->Argument[2];
+      osDiskWriteRequest(DiskID, DiskSector, DiskAddress);
+      break;
       
-      //create struct for disk queue
-      dq = malloc(sizeof(DQ_ELEMENT));
-      dq->context = curr_proc->context;
-      dq->PID = curr_proc->idnum;
-      dq->PCB = curr_proc;
-      
-      curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
-
-      CheckDiskStatus(disk_id, &status);
-
-      if(status == DEVICE_FREE){
-	aprintf("\nDisk %d is free\n\n", disk_id);
-	aprintf("Proceeding with the write\n");
-
-	//this is where to store the information about the process
-	disk_process[disk_id] = dq;
-	
-	mmio.Mode = Z502DiskWrite;
-	mmio.Field1 = disk_id;
-	mmio.Field2 = disk_sector;
-	mmio.Field3 = disk_address;
-	
-	MEM_WRITE(Z502Disk, &mmio);
-     
-      }
-      else{
-	aprintf("\nDevice not free\n\n");
-
-	dq->disk_id = disk_id;
-	dq->disk_sector = disk_sector;
-	dq->disk_address = disk_address;
-	AddToDiskQueue(disk_id, dq);
-      }
-
-      dispatcher();
-
-   
-       break;
-           
     case SYSNUM_CHECK_DISK:
-      disk_id = (long)SystemCallData->Argument[0];
-      disk_sector = (long)SystemCallData->Argument[1];
-       curr_proc = &PRO_INFO->PCB[PRO_INFO->current];
+      DiskID = (long)SystemCallData->Argument[0];
+      DiskSector = (long)SystemCallData->Argument[1];
 
-      CheckDiskStatus(disk_id, &status);
-
-      if(status == DEVICE_FREE){
-	aprintf("\nDisk %d is free\n\n", disk_id);
-	aprintf("Proceeding with the check\n");
-
-	//this is where to store the information about the process
-	//	disk_process[disk_id] = curr_proc->context;
-	
-	mmio.Mode = Z502CheckDisk;
-	mmio.Field1 = disk_id;
-	mmio.Field2 = mmio.Field3 = 0;
-	
-	MEM_WRITE(Z502Disk, &mmio);
-     
-      }
-      else{
-	aprintf("\nDevice not free\n\n");
-	//create struct for disk queue
-	dq = malloc(sizeof(DQ_ELEMENT));
-	dq->context = curr_proc->context;
-	dq->disk_id = disk_id;
-	dq->disk_sector = disk_sector;
-	//dq->disk_address = disk_address;
-	AddToDiskQueue(disk_id, dq);
-      }
-
-      //dispatcher();  appears that no interrupt is thrown for CheckDisk
-      //browsing z502 code seems to confirm
-
+      osCheckDiskRequest(DiskID, DiskSector);
       break;
 
 
     case SYSNUM_CREATE_PROCESS:
 
-	 printf("\n\n\ncreate a process here\n\n\n");
-	 char* name = (char *)SystemCallData->Argument[0];
-	 long start_address = (long)SystemCallData->Argument[1];
-	 long priority = (long)SystemCallData->Argument[2];
-	 long* process_id = (long *)SystemCallData->Argument[3];
-	 long* return_error = (long *)SystemCallData->Argument[4];
-	 CreateProcess(name, start_address, priority, PRO_INFO->current, process_id, return_error);
+      aprintf("");
+      char* name = (char *)SystemCallData->Argument[0];
+      long start_address = (long)SystemCallData->Argument[1];
+      long priority = (long)SystemCallData->Argument[2];
+      long* process_id = (long *)SystemCallData->Argument[3];
+      long* return_error = (long *)SystemCallData->Argument[4];
+      CreateProcess(name, start_address, priority, PRO_INFO->current, process_id, return_error);
       break;
 
     case SYSNUM_SUSPEND_PROCESS:
 
-      aprintf("\n\nSuspend Process\n\n");
-      PID = (long)SystemCallData->Argument[0];
+      PID2 = (long)SystemCallData->Argument[0];
       return_error = (long *)SystemCallData->Argument[1];
-      osSuspendProcess(PID, return_error);
+      osSuspendProcess(PID2, return_error);
 
       break;
 
     case SYSNUM_RESUME_PROCESS:
 
-      aprintf("\n\nResume Process\n\n");
-      PID = (long)SystemCallData->Argument[0];
+      PID2 = (long)SystemCallData->Argument[0];
       return_error = (long *)SystemCallData->Argument[1];
-      osResumeProcess(PID, return_error);
+      osResumeProcess(PID2, return_error);
 
       break;
 
     case SYSNUM_CHANGE_PRIORITY:
 
-      aprintf("\n\n\n\n\n\n\n\n\nChanging A Priority\n\n");
-      PID = (long)SystemCallData->Argument[0];
-      long NewPriority = (long)SystemCallData->Argument[1];
-      long* ReturnError = (long *)SystemCallData->Argument[2];
-      osChangePriority(PID, NewPriority, ReturnError);
+      PID2 = (long)SystemCallData->Argument[0];
+      NewPriority = (long)SystemCallData->Argument[1];
+      ReturnError = (long *)SystemCallData->Argument[2];
+      osChangePriority(PID2, NewPriority, ReturnError);
       
       break;
 
     case SYSNUM_SEND_MESSAGE:
 
-      aprintf("\n\n\n\n\n\nSending a Message\n\n\n\n");
-
-      long TargetPID = (long)SystemCallData->Argument[0];
+      TargetPID = (long)SystemCallData->Argument[0];
       char *MessageBuffer = (char *)SystemCallData->Argument[1];
       long MessageLength = (long)SystemCallData->Argument[2];
       ReturnError = (long *)SystemCallData->Argument[3];
@@ -448,8 +313,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
     case SYSNUM_RECEIVE_MESSAGE:
 
-      aprintf("\n\n\n\n\n\nReceiving a Message\n\n\n\n");
-
+      aprintf("");
       long SourcePID = (long)SystemCallData->Argument[0];
       MessageBuffer = (char *)SystemCallData->Argument[1];
       long MessRecLength = (long)SystemCallData->Argument[2];
@@ -459,9 +323,6 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       osReceiveMessage(SourcePID, MessageBuffer, MessRecLength, MessSendLength, SenderPID, ReturnError);
       break;
      
-       
-    default:
-      aprintf("\n\n\nNo SysCall number!!!\n\n\n");
     }
 
 }           // End of SVC
@@ -531,8 +392,6 @@ void osInit(int argc, char *argv[]) {
     //create the structures for the OS
     CreatePRO_INFO();
 
-    //test print
-    ProcessesState();
     
     //Timer Queue
     if(CreateTimerQueue() == -1){
@@ -550,13 +409,8 @@ void osInit(int argc, char *argv[]) {
     if(CreateReadyQueue() == -1){
       aprintf("\n\nUnable to create Ready Queue!\n\n");
     }
-
-    //Suspended Queue
-    if(CreateSuspendQueue() == -1){
-      aprintf("\n\nUnable to create Suspended Queue!\n\n");
-    }
-
-    //Message Queue
+       
+    //Message Buffer
     if(CreateMessageQueue() == -1){
       aprintf("\n\nUnable to create Message Queue!\n\n");
     }
@@ -584,7 +438,7 @@ void osInit(int argc, char *argv[]) {
 	  strcpy(buffer, argv[1]);
 	  long test = GetTestName(buffer);
 	  CreateProcess(argv[1], test, 1, -1, &process_id, &return_error);
-	  ProcessesState();
+
 
 	  PRO_INFO->current = 0;//hackhackhack....
 
@@ -615,47 +469,68 @@ long GetTestName(char* test_name){
 
   printf("%s is the test name\n", test_name);
 
-  if(strcmp("sample", test_name) == 0)
+  if(strcmp("sample", test_name) == 0){
     return (long)(SampleCode);
-
-  if(strcmp("test0", test_name) == 0)
+  }
+  if(strcmp("test0", test_name) == 0){
+    TestRunning = 0;
     return (long)(test0);
-     
-  if(strcmp("test1", test_name) == 0)
+  }
+  if(strcmp("test1", test_name) == 0){
+    TestRunning = 1;
     return (long)(test1);
-    
-  if(strcmp("test2", test_name) == 0)
+  }    
+  if(strcmp("test2", test_name) == 0){
+    TestRunning = 2;
     return (long)(test2);
-  
-  if(strcmp("test3", test_name) == 0)
+  }
+  if(strcmp("test3", test_name) == 0){
+    TestRunning = 3;
     return (long)(test3);
-  
-  if(strcmp("test4", test_name) == 0)
+  }
+  if(strcmp("test4", test_name) == 0){
+    TestRunning = 4;
     return (long)(test4);
-
-  if(strcmp("test5", test_name) == 0)
+  }
+  if(strcmp("test5", test_name) == 0){
+    TestRunning = 5;
     return (long)(test5);
-     
-  if(strcmp("test6", test_name) == 0)
+  }
+  if(strcmp("test6", test_name) == 0){
+    TestRunning = 6;
     return (long)(test6);
-    
-  if(strcmp("test7", test_name) == 0)
+  }    
+  if(strcmp("test7", test_name) == 0){
+    TestRunning = 7;
     return (long)(test7);
-  
-  if(strcmp("test8", test_name) == 0)
+  }
+  if(strcmp("test8", test_name) == 0){
+    TestRunning = 8;
     return (long)(test8);
-  
-  if(strcmp("test9", test_name) == 0)
+  }
+  if(strcmp("test9", test_name) == 0){
+    TestRunning = 9;
     return (long)(test9);
-  
-  if(strcmp("test10", test_name) == 0)
+  }
+  if(strcmp("test10", test_name) == 0){
+    TestRunning = 10;
     return (long)(test10);
-  
-  if(strcmp("test11", test_name) == 0)
+  }
+  if(strcmp("test11", test_name) == 0){
+    TestRunning = 11;
     return (long)(test11);
-  
-  if(strcmp("test12", test_name) == 0)
+  }
+  if(strcmp("test12", test_name) == 0){
+    TestRunning = 12;
     return (long)(test12);
-  
+  }
+  if(strcmp("test13", test_name) == 0){
+    TestRunning = 13;
+    return (long)(test13);
+  }
+  if(strcmp("test14", test_name) == 0){
+    TestRunning = 14;
+    return (long)(test14);
+  }
   return 0;
 }

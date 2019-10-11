@@ -1,26 +1,12 @@
-//for use with SystemCallData struct
-#include "syscalls.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include "timerQueue.h"
+#include "readyQueue.h"
 #include "process.h"
 #include "protos.h"
 #include "os_globals.h"
 
-
- 
-//Test function that prints the states of all the processes
-void ProcessesState(){
-  for(int i=0; i<MAXPROCESSES; i++){
-    if(PRO_INFO->PCB[i].in_use == 0){
-      // printf("PRO_INFO slot %d is not in use\n", i);
-    }
-    else{
-      // printf("\tPRO_INFO slot %d is in use\n\t%ld is the id\n\t%s is the name\n\twith parent %d\n\n", i, PRO_INFO->PCB[i].idnum, PRO_INFO->PCB[i].name,PRO_INFO->PCB[i].parent);
-    }
-  }
-}
 
 //need to remember to free at end somehow
 //Also created a lock for each process
@@ -29,15 +15,30 @@ void CreatePRO_INFO(){
   for(int i=0; i<MAXPROCESSES; i++){
     PRO_INFO->PCB[i].in_use = 0;
     PRO_INFO->PCB[i].LOCK = (PROC_LOCK_BASE + i);
-    //aprintf("%x is lock for process %d\n", PRO_INFO->PCB[i].LOCK, i);
   }
   
   PRO_INFO->nextid = 0;
 }
 
+//get the first available slot for a PCB
+INT32 GetAvailableSlot(){
+  for(INT32 i=0; i<MAXPROCESSES; i++){
+    if(PRO_INFO->PCB[i].in_use != 1){
+      return i;
+    }
+  }
+  return -1;
+}
+
+
 long osCreateProcess(char* name, long context, INT32 parent, long Priority){
-  
-  PROCESS_CONTROL_BLOCK* new_pcb = &PRO_INFO->PCB[PRO_INFO->nextid];
+
+
+  //Need to get the next available slot.
+  INT32 next_slot = GetAvailableSlot();
+  PROCESS_CONTROL_BLOCK* new_pcb = &PRO_INFO->PCB[next_slot];
+
+
   new_pcb->idnum = PRO_INFO->nextid;
   PRO_INFO->nextid++; //eventually need a more sophisticated method for reusing pid's
   strcpy(new_pcb->name, name);
@@ -72,35 +73,28 @@ long GetCurrentPID(){
       }
     }
   }
-
-  return -1;
-  
+  return -1; 
 }
 
-
-//change the parameter passed here 
-void getProcessID(SYSTEM_CALL_DATA* scd){
-
-  char process_name[100];
-  strcpy(process_name, (char*)scd->Argument[0]);
+ 
+void GetProcessID(char ProcessName[], long *PID, long *ReturnError){
 
   //Requesting current process
-  if(strcmp(process_name, "") == 0){
-    *(long *)scd->Argument[1] = GetCurrentPID();
-    *(long *)scd->Argument[2] = 0;//no error
+  if(strcmp(ProcessName, "") == 0){
+    (*PID) = GetCurrentPID();
+    (*ReturnError) = ERR_SUCCESS;
   }
   else{
     for(int i=0; i<MAXPROCESSES; i++){
       if(PRO_INFO->PCB[i].in_use != 0){
-	if(strcmp(process_name, PRO_INFO->PCB[i].name) == 0){
-	  *(long *)scd->Argument[1] = PRO_INFO->PCB[i].idnum;
-	  *(long *)scd->Argument[2] = 0;//no error
+	if(strcmp(ProcessName, PRO_INFO->PCB[i].name) == 0){
+	  (*PID) = PRO_INFO->PCB[i].idnum;
+	  (*ReturnError) = ERR_SUCCESS;
 	  return;
 	}
       }
     }
-    *(long *)scd->Argument[2] = 1;//return error
-    // printf("Requested something other than current process\nNot implemented yet!\n\n");
+    (*ReturnError) = ERR_BAD_PARAM;
   }
 }
 
@@ -117,13 +111,13 @@ void* GetPCBContext(long context){
       if(PRO_INFO->PCB[i].context == context){
 
 	process = &PRO_INFO->PCB[i];
-	return (void*) process;
+	return (void *) process;
       }
     }
   }
   process = NULL;
   aprintf("Could not find the proper PCB from that context\n");
-  return (void*) process;
+  return (void *) process;
 }
 
 
@@ -194,7 +188,7 @@ void osSuspendProcess(long PID, long* return_error){
   }
 
   INT32 process_state;
-  GetProcessState(PID, &process_state);
+ 
   if(process_state == SUSPENDED){
     aprintf("Process is already suspended!\n\n");
     (*return_error) = 1;
@@ -232,14 +226,7 @@ void osSuspendProcess(long PID, long* return_error){
 
 
 void osResumeProcess(long PID, long* return_error){
-  /*
-  //Check to see if process is the current process
-  if(GetCurrentPID() == PID){
-    aprintf("Cannot suspend current process!\n\n");
-    (*return_error) = 1;
-    return;
-  }
-  */
+ 
   
   //check to see if process exists
   PROCESS_CONTROL_BLOCK* process = GetPCB(PID);
@@ -279,6 +266,38 @@ void osResumeProcess(long PID, long* return_error){
    
 }
 
+/*
+Simply checks for any active processes. This includes Running, Suspended, Waiting for Disk/Timer etc. 
+If there are none return FALSE.
+If there is a process return TRUE.
+This is useful for knowing whether to end simulation in a Terminate Process Call
+*/
+INT32 CheckActiveProcess(){
+
+  //Try to find an active process
+  for(int i=0; i<MAXPROCESSES; i++){
+    if(PRO_INFO->PCB[i].in_use == 1){
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+
+/*seems to be close to duplicate of CheckActiveProcesses()
+used in CreateProcess()
+*/
+int CheckProcessCount(){
+
+  for(int i=0; i<MAXPROCESSES; i++){
+    if(PRO_INFO->PCB[i].in_use == 0){
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
 //Not sure how to handle children of process
 //returning errors
 void TerminateProcess(long process_id){
@@ -299,6 +318,8 @@ void TerminateProcess(long process_id){
   PRO_INFO->PCB[i].priority = 0;
   strcpy(PRO_INFO->PCB[i].name, "");
 
+  
+
   return;
 }
 
@@ -313,20 +334,11 @@ void TerminateChildren(long process_id){
        PRO_INFO->PCB[i].parent == process_id){
 
       TerminateProcess(PRO_INFO->PCB[i].idnum);
-      ProcessesState();
     }
   }
 }
 
-int CheckProcessCount(){
 
-  for(int i=0; i<MAXPROCESSES; i++){
-    if(PRO_INFO->PCB[i].in_use == 0){
-      return 1;
-    }
-  }
-  return 0;
-}
 
 void CreateProcess(char* name, long start_address, long Priority, INT32 parent, long* process_id, long* return_error){
 
@@ -339,19 +351,19 @@ void CreateProcess(char* name, long start_address, long Priority, INT32 parent, 
   void *PageTable = (void *) calloc(2, NUMBER_VIRTUAL_PAGES);
 
   if(CheckProcessCount() == 0){
-    printf("\n\nReached Max number of Processes!\n\n");
+    aprintf("\n\nReached Max number of Processes!\n\n");
     *return_error = 1;  //set error message
     return;
   } 
 
   //check for proper priority. Not 100% sure what improper priority is
   if(Priority <= 0){
-    printf("\n\nImproper Priority\n\n");
+    aprintf("\n\nImproper Priority\n\n");
     *return_error = 1;  //set error message
     return;
   }
   if(CheckProcessName(name) == 0){
-    printf("\n\nDuplicate Name\n\n");
+    aprintf("\n\nDuplicate Name\n\n");
     *return_error = 1;  //set error message
     return;
   }
@@ -365,12 +377,10 @@ void CreateProcess(char* name, long start_address, long Priority, INT32 parent, 
   MEM_WRITE(Z502Context, &mmio);   // Start of Make Context Sequence
 
   context = mmio.Field1;//Field1 returns the context from initialize context
-  printf("\n\nhere is the new context %lx\n\n", context);
   PID = osCreateProcess(name, context, parent, Priority);
   
   
   *process_id = PID;  //set error message  
-  printf("Here is the name of the process %s\n\n", name);
 
   //set error field to 0 to indicate no error in process creation
   *return_error = 0;  //set error message
@@ -413,21 +423,12 @@ void ChangeProcessState(long PID, INT32 new_state){
   }
 
   INT32 LOCK = PCB->LOCK;
-  INT32 Suspend_Until_Locked = TRUE;
-  INT32 Sucess_Failure = -1;
 
-  READ_MODIFY(LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
-  if(Sucess_Failure == FALSE){
-    aprintf("\n\nCould Not Obtain the Lock to change process state\n\n");
-  }
+  LockLocation(LOCK);
 
   PCB->state = new_state;
 
-    
-  READ_MODIFY(LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
-  if(Sucess_Failure == FALSE){
-    aprintf("\n\nCould not give up the lock to change process state\n\n");
-  }
+  UnlockLocation(LOCK);
 }  
 
 /*
@@ -442,20 +443,12 @@ void GetProcessState(long PID, INT32* state){
   }
 
   INT32 LOCK = PCB->LOCK;
-  INT32 Suspend_Until_Locked = TRUE;
-  INT32 Sucess_Failure = -1;
 
-  READ_MODIFY(LOCK, 1, Suspend_Until_Locked, &Sucess_Failure);
-  if(Sucess_Failure == FALSE){
-    aprintf("\n\nCould Not Obtain the Lock for get process state\n\n");
-  }
+  LockLocation(LOCK);
 
   (*state) = PCB->state;
     
-  READ_MODIFY(LOCK, 0, Suspend_Until_Locked, &Sucess_Failure);
-  if(Sucess_Failure == FALSE){
-    aprintf("\n\nCould not give up the lock for get process state\n\n");
-  }
+  UnlockLocation(LOCK); 
 }  
 
 void osChangePriority(long PID, long NewPriority, long* ReturnError){
@@ -493,3 +486,37 @@ void osChangePriority(long PID, long NewPriority, long* ReturnError){
   }
 }
 
+void osTerminateProcess(long TargetPID, long *ReturnError){
+
+  MEMORY_MAPPED_IO mmio;
+  long PID = GetCurrentPID();
+
+  if(TargetPID == -1 || TargetPID == -2){
+    if(TargetPID == -1){
+      aprintf("Terminate Current process!\n");
+
+      TerminateProcess(PID);
+
+    }
+    else{ //TargetPID == -2)
+      aprintf("Terminate current process and all children\n\n");
+      TerminateChildren(PID);
+      TerminateProcess(PID);
+    }
+
+    if(CheckActiveProcess() == FALSE){
+      mmio.Mode = Z502Action;
+      mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+      MEM_WRITE(Z502Halt, &mmio);
+    }
+    else{
+      dispatcher();
+    }
+  }
+  else{
+    aprintf("Terminate Process %ld. This is not the current process!\n\n",TargetPID);
+    TerminateProcess(TargetPID);
+  }  
+ 
+  (*ReturnError) = ERR_SUCCESS;  //set error message
+}
