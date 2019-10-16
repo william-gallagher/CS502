@@ -7,13 +7,12 @@
 #include "process.h"
 #include "os_globals.h"
 #include <unistd.h>
+#include "os_Schedule_Printer.h"
 
 int CreateReadyQueue(){
   ready_queue_id = QCreate("RQueue");
   return ready_queue_id;
 }
-
-
 
 /*
 Create a RQ_ELEMENT with context and add to the Ready Queue
@@ -36,6 +35,7 @@ void AddToReadyQueue(long context, long PID, void* PCB){
   QInsert(ready_queue_id, Priority, (void *) rqe);
 
   UnlockLocation(READY_LOCK);
+  //osPrintState("Add RQ", PID);
  
 }
 
@@ -61,12 +61,10 @@ long RemoveFromReadyQueue(PROCESS_CONTROL_BLOCK* process){
 }
 
 
-
 /*
 Changes the priority of the process in the ready queue
 */
 long ChangePriorityInReadyQueue(PROCESS_CONTROL_BLOCK* process, INT32 NewPriority){
-
   
   LockLocation(READY_LOCK);
   
@@ -89,7 +87,7 @@ long ChangePriorityInReadyQueue(PROCESS_CONTROL_BLOCK* process, INT32 NewPriorit
 /*
 Remove a RQ_ELEMENT from the head of the Ready Queue. Return the context stored in the RQ_ELEMENT
 */
-long RemoveFromReadyQueueHead(){
+RQ_ELEMENT* RemoveFromReadyQueueHead(){
 
   
   LockLocation(READY_LOCK);
@@ -98,7 +96,7 @@ long RemoveFromReadyQueueHead(){
    
   UnlockLocation(READY_LOCK);
   
-  return rqe->context;
+  return rqe;
 }
 
 /*
@@ -137,13 +135,18 @@ void dispatcher(){
      usleep(1);//need a sleep so other thread can get LOCK
   }
   
-  long context = RemoveFromReadyQueueHead();
+  RQ_ELEMENT* rqe = RemoveFromReadyQueueHead();
+  long Context = rqe->context;
 
+  osPrintState("Dispatch", rqe->PID, rqe->PID);
+  
   //need PID
   // ChangeProcessState( ,RUNNING)
+
+  free(rqe);
   
   mmio.Mode = Z502StartContext;
-  mmio.Field1 = context;
+  mmio.Field1 = Context;
   mmio.Field2 = START_NEW_CONTEXT_AND_SUSPEND;
   mmio.Field3 = mmio.Field4 = 0;
   MEM_WRITE(Z502Context, &mmio);     // Start up the context
@@ -151,8 +154,6 @@ void dispatcher(){
   if(mmio.Field4 != ERR_SUCCESS){
     aprintf("\nError in starting context in dispatcher\n");
   }
-
-  
 }
 
 

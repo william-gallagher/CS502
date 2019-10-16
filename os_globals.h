@@ -32,6 +32,9 @@ The include file for all the OS wide structures and defines
 #define WAITING_TO_SUSPEND_DISK 6
 #define SUSPENDED_WAITING_FOR_MESSAGE 7
 
+//define whether a PCB is in use or not
+#define FREE 0
+#define IN_USE 1
 
 //should priority be an INT32 or long??????
 typedef struct{
@@ -47,25 +50,18 @@ typedef struct{
   void* queue_ptr;
 } PROCESS_CONTROL_BLOCK;
 
-typedef struct{
-  INT32 nextid;
-  INT32 current;
-  PROCESS_CONTROL_BLOCK PCB[MAXPROCESSES];
-} PROCESSES_INFORMATION;
 
-
+PROCESS_CONTROL_BLOCK PCB[MAXPROCESSES];
+INT32 nextid;
 
 //make this outside a function for now to allow everyone to use
-PROCESSES_INFORMATION* PRO_INFO;
+//PROCESSES_INFORMATION* PRO_INFO;
 
 //suspended queue
 typedef struct{
   long context;
 }SQ_ELEMENT;
 
-//make sure this lock isnt use. Might be
-//#define SUSPEND_LOCK MEMORY_INTERLOCK_BASE + 2;
-int suspend_queue_id;
 
 //ready queue
 
@@ -108,7 +104,7 @@ typedef struct{
   void* PCB;
 }DQ_ELEMENT;
 
-int disk_queue[MAX_NUMBER_OF_DISKS];
+INT32 disk_queue[MAX_NUMBER_OF_DISKS];
 
 INT32 DISK_LOCK[MAX_NUMBER_OF_DISKS];
 

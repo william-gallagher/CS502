@@ -180,6 +180,6 @@ void osCheckDiskRequest(long DiskID, long DiskSector){
   }
   else{
 
-    aprintf("\n\nDisk %ld is not free\n\n", DiskID);
+    aprintf("\n\nDisk %ld is not free. Cannot Check Disk\n\n", DiskID);
   }
 }

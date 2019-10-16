@@ -100,7 +100,7 @@ void FillProcessSuspended(SP_INPUT_DATA* SPInput){
   int Index = 0;
 
   for(int i=0; i<MAXPROCESSES; i++){
-    pcb = &PRO_INFO->PCB[i];
+    pcb = &PCB[i];
     if(pcb->in_use == 1){
       if(pcb->state == SUSPENDED){
 	SuspendedCount++;
@@ -123,7 +123,7 @@ void FillMessageSuspended(SP_INPUT_DATA* SPInput){
   int Index = 0;
 
   for(int i=0; i<MAXPROCESSES; i++){
-    pcb = &PRO_INFO->PCB[i];
+    pcb = &PCB[i];
     if(pcb->in_use == 1){
       if(pcb->state == SUSPENDED_WAITING_FOR_MESSAGE){
 	MessageSuspendedCount++;
@@ -147,16 +147,20 @@ void FillMessageSuspended(SP_INPUT_DATA* SPInput){
 
 	 NEED to ADD WAITING FOR MESSAGE
 */
-void osPrintState(char* Action){
+void osPrintState(char* Action, long TargetPID, long CurrentPID){
 
+  //Don't use Schedule Printer if we have reached the print limit
+  if(SchedulerPrints <= 0) return;
+  
   SP_INPUT_DATA SPInput;
 
   strcpy(SPInput.TargetAction, Action);
 
-  SPInput.CurrentlyRunningPID = GetCurrentPID();
-  SPInput.TargetPID = 2;
-  SPInput.NumberOfRunningProcesses = 1;
-  SPInput.RunningProcessPIDs[0] =  SPInput.CurrentlyRunningPID;
+  SPInput.CurrentlyRunningPID = CurrentPID;
+  SPInput.TargetPID = TargetPID;
+  SPInput.NumberOfRunningProcesses = 0;
+  //Maybe set like this until multi-processor
+  //SPInput.RunningProcessPIDs[0] =  SPInput.CurrentlyRunningPID;
 
   FillReady(&SPInput);
 
@@ -172,6 +176,8 @@ void osPrintState(char* Action){
   
   SPPrintLine(&SPInput);
 
+  //decrement the count for the Scheduler Printer
+  SchedulerPrints--;
 }
 
 
@@ -180,6 +186,9 @@ char *error_status[] = {"ERR_SUCCESS", "ERR_BAD_PARAM", "ERR_NO_PREVIOUS_WRITE",
 
 void PrintInterrupt(INT32 DeviceID, INT32 Status){
 
+  //Don't print if we have reached the max number of prints for the test
+  if(InterruptHandlerPrints <= 0) return;
+  
   if(DeviceID == TIMER_INTERRUPT){
     
     aprintf("\nInterrupt Handler: Timer Interrupt\nTimer Status %s\n\n", error_status[Status]);
@@ -189,6 +198,9 @@ void PrintInterrupt(INT32 DeviceID, INT32 Status){
      
     aprintf("\nInterrupt Handler: Disk Interrupt\nHandling Disk %d with Status %s\n\n", DeviceID - DISK_INTERRUPT, error_status[Status]);
   }
+
+  //decrement the count for the interrupt prints
+  InterruptHandlerPrints--;
 }
 
 
@@ -198,73 +210,173 @@ void PrintInterrupt(INT32 DeviceID, INT32 Status){
 void PrintSVC(long Arguments[], INT32 call_type ){
 
   char buffer[MAX_NAME_LENGTH];
-      
+
+  //Don't print if we have reached the limit for prints
+  if(SVCPrints <= 0) return;
+       
   switch(call_type){
     
   case SYSNUM_GET_TIME_OF_DAY:
 
-    aprintf("\nSVC handler: GetTime\n\n");
+    aprintf("\n\tSVC handler: GetTime\n\n");
     break;
 
   case SYSNUM_SLEEP:
 
-    aprintf("\nSVC handler: Sleep\nSleep time %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Sleep\n\tSleep time: %d\n\n", Arguments[0]);
     break;
  
   case SYSNUM_GET_PROCESS_ID:
 
     strcpy(buffer, (char *)Arguments[0]);
     if(strcmp(buffer, "") == 0){
-      aprintf("\nSVC handler: GetPid\nGetting the Process ID for the current Process\n\n");
+      aprintf("\n\tSVC handler: GetPid\n\tGetting the Process ID for the current Process\n\n");
     }
     else{
-      aprintf("\nSVC handler: GetPid\nGetting the Process ID for Process %s\n\n", buffer);
+      aprintf("\nSVC handler: GetPid\n\tGetting the Process ID for Process %s\n\n", buffer);
     }
     break;
   
   case SYSNUM_CREATE_PROCESS:
-    aprintf("\nSVC handler: Create Process\nCreating a Process with name %s\n\n", (char *) Arguments[0]);
+    aprintf("\n\tSVC handler: Create Process\n\tCreating a Process with name %s\n\n", (char *) Arguments[0]);
     break;
 
   case SYSNUM_TERMINATE_PROCESS:
-    aprintf("\nSVC handler: Terminate Process\nTerminating Target PID %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Terminate Process\n\tTerminating Target PID %d\n\n", Arguments[0]);
 
     break;
 
   case SYSNUM_SUSPEND_PROCESS:
-    aprintf("\nSVC handler: Suspend Process\nSuspending PID %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Suspend Process\n\tSuspending PID %d\n\n", Arguments[0]);
     break;
 
   case SYSNUM_RESUME_PROCESS:
-    aprintf("\nSVC handler: Resume Process\nResuming PID %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Resume Process\n\tResuming PID %d\n\n", Arguments[0]);
     break;
 
   case SYSNUM_CHANGE_PRIORITY:
-    aprintf("\nSVC handler: Change Priority\nChanging Priority of PID %d to %d\n\n", Arguments[0], Arguments[1]);
+    aprintf("\n\tSVC handler: Change Priority\n\tChanging Priority of PID %d to %d\n\n", Arguments[0], Arguments[1]);
     break;
 
   case SYSNUM_SEND_MESSAGE:
-    aprintf("\nSVC handler: Send Message\nSending a Message to PID %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Send Message\n\tSending a Message to PID %d\n\n", Arguments[0]);
     break;
 
   case SYSNUM_RECEIVE_MESSAGE:
-    aprintf("\nSVC handler: Receive Message\nReceving a Message from PID %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Receive Message\n\tReceving a Message from PID %d\n\n", Arguments[0]);
     break;
 
   case SYSNUM_PHYSICAL_DISK_READ:
-    aprintf("\nSVC handler: Disk Read\nReading from Disk %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Disk Read\n\tReading from Disk %d\n\n", Arguments[0]);
     break;
 
   case SYSNUM_PHYSICAL_DISK_WRITE:
-    aprintf("\nSVC handler: Disk Write\nWriting to Disk %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Disk Write\n\tWriting to Disk %d\n\n", Arguments[0]);
     break;
 
   case SYSNUM_CHECK_DISK:
-    aprintf("\nSVC handler: Check Disk\nChecking data on Disk %d\n\n", Arguments[0]);
+    aprintf("\n\tSVC handler: Check Disk\n\tChecking data on Disk %d\n\n", Arguments[0]);
     break;
 
   default:
-      aprintf("\nSVC handler: Call Not Recognized.\n\n");
+      aprintf("\n\tSVC handler: Call Not Recognized.\n\n");
 
   }
+
+  //decrement the count of SVCPrints
+  SVCPrints--;
 }
+
+void SetTestNumber(char TestName[]){
+
+  if(strcmp("sample", TestName) == 0){
+    TestRunning = -1;
+  }
+  if(strcmp("test0", TestName) == 0){
+    TestRunning = 0;
+  }
+  if(strcmp("test1", TestName) == 0){
+    TestRunning = 1;
+  }    
+  if(strcmp("test2", TestName) == 0){
+    TestRunning = 2;
+  }
+  if(strcmp("test3", TestName) == 0){
+    TestRunning = 3;
+  }
+  if(strcmp("test4", TestName) == 0){
+    TestRunning = 4;
+  }
+  if(strcmp("test5", TestName) == 0){
+    TestRunning = 5;
+  }
+  if(strcmp("test6", TestName) == 0){
+    TestRunning = 6;
+  }    
+  if(strcmp("test7", TestName) == 0){
+    TestRunning = 7;
+  }
+  if(strcmp("test8", TestName) == 0){
+    TestRunning = 8;
+  }
+  if(strcmp("test9", TestName) == 0){
+    TestRunning = 9;
+  }
+  if(strcmp("test10", TestName) == 0){
+    TestRunning = 10;
+  }
+  if(strcmp("test11", TestName) == 0){
+    TestRunning = 11;
+  }
+  if(strcmp("test12", TestName) == 0){
+    TestRunning = 12;
+  }
+  if(strcmp("test13", TestName) == 0){
+    TestRunning = 13;
+  }
+  if(strcmp("test14", TestName) == 0){
+    TestRunning = 14;
+  }
+}
+#define MAX_INT ((UINT32)~0 >> 1)
+
+void SetPrintOptions(INT32 TestRunning) {
+
+  switch(TestRunning){
+
+  case -1: //Running sample()
+  case 0:
+  case 1:
+  case 2:
+    SVCPrints = MAX_INT;
+    InterruptHandlerPrints = MAX_INT;
+    SchedulerPrints = 0;
+    MemoryPrints = 0;
+    break;
+  case 3:
+  case 4:
+  case 5:
+  case 6:
+  case 7:
+  case 8:
+  case 9:
+  case 10:
+    SVCPrints = 10;
+    InterruptHandlerPrints = 10;
+    SchedulerPrints = MAX_INT;
+    MemoryPrints = 0;
+    break;
+  case 11:
+  case 12:
+  case 13:
+  case 14:
+    SVCPrints = 10;
+    InterruptHandlerPrints = 10;
+    SchedulerPrints = 100;
+    MemoryPrints = 0;
+    break;
+  default:
+    aprintf("\n\nTest Number Not Recognized\n\n");    
+  }
+}
+      

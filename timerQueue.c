@@ -6,6 +6,7 @@
 #include "protos.h"
 #include "process.h"
 #include "os_globals.h"
+#include "os_Schedule_Printer.h"
 
 //---------------------------------------------------------------------
 /*
@@ -144,20 +145,26 @@ void StartTimer(long SleepTime){
       mmio.Field1 = SleepTime;   
       mmio.Field2 = mmio.Field3 =mmio.Field4 = 0;
       MEM_WRITE(Z502Timer, &mmio);
+
+      //check return of start timer
+      if(mmio.Field4 != ERR_SUCCESS){
+	printf("Error starting the timer\n\n");
+      }
     }
   }//don't need to restart if new wakeup time is after NextWakeUp
 
   //add tqe to the timer queue
   AddTimerToQueue(context, wakeup_time, GetCurrentPCB());
 
+  long PID = GetCurrentPID();
   //set process state to TIMER
-  ChangeProcessState(GetCurrentPID(), TIMER);
+  ChangeProcessState(PID, TIMER);
 
- 
-  //check return of start timer
-  if(mmio.Field4 != ERR_SUCCESS){
-    printf("Error starting the timer\n\n");
-  }
+  osPrintState("Sleep", PID, PID);
+
+
+  //print the state after sleep
+  // osPrintState("Sleep", PID); 
 
     dispatcher();
 }
@@ -170,11 +177,26 @@ void HandleTimerInterrupt(){
 
   MEMORY_MAPPED_IO mmio;
   INT32 RemoveAgain;
-
+  long CurrentTime;
+  long WakeTime;
+    
   do{
 
     TQ_ELEMENT* tq = RemoveTimerFromQueue();
-    AddToReadyQueue(tq->context, tq->PID, tq->PCB);
+    PROCESS_CONTROL_BLOCK *RemovedProcess = tq->PCB;
+
+    /*
+    We have to check the state of the process that is removed from the
+    timer queue. If the process has been suspended by another process
+    at some point during its time on the Timer Queue it now needs to go
+    to a SUSPENDED state rather than on the Ready Queue
+    */
+    if(RemovedProcess->state == WAITING_TO_SUSPEND_TIMER){
+      ChangeProcessState(tq->PID, SUSPENDED);
+    }
+    else{
+      AddToReadyQueue(tq->context, tq->PID, tq->PCB);
+    }
  
     //Check for another timer on the Queue
     TQ_ELEMENT* next_timer = (TQ_ELEMENT*) QNextItemInfo(timer_queue_id);
@@ -185,14 +207,9 @@ void HandleTimerInterrupt(){
     }
     //There is another process of Timer Queue
     else{
-      //get the current time
-      mmio.Mode = Z502ReturnValue;
-      mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4;
-      MEM_READ(Z502Clock, &mmio);
-      long CurrentTime = mmio.Field1;
+      GetTimeOfDay(&CurrentTime);
 
-      long WakeTime = next_timer->wakeup_time;
-      aprintf("\n\nThe current time is %ld and the wakeup time is %ld\n\n", CurrentTime, WakeTime);
+      WakeTime = next_timer->wakeup_time;
 
       if(WakeTime - CurrentTime > 10){
 	//reset timer 

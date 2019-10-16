@@ -80,8 +80,6 @@ void InterruptHandler(void) {
     mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
     MEM_READ(Z502InterruptDevice, &mmio);
 
-    
-    
     if(mmio.Field4 != ERR_SUCCESS){
       aprintf("\n\nPROB WITH INTERRUPT\n\n");
     }
@@ -184,7 +182,7 @@ void FaultHandler(void) {
 void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
   //just test the state printer
-   osPrintState("Call SVC");
+  //  osPrintState("Call SVC", 1);
 
   short call_type;
 
@@ -238,7 +236,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
     case SYSNUM_TERMINATE_PROCESS:
 
       TargetPID = (long)SystemCallData->Argument[0];
-      ReturnError = (long *)SystemCallData->Argument[2];
+      ReturnError = (long *)SystemCallData->Argument[1];
       osTerminateProcess(TargetPID, ReturnError);
       break;
       
@@ -261,10 +259,8 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
     case SYSNUM_CHECK_DISK:
       DiskID = (long)SystemCallData->Argument[0];
       DiskSector = (long)SystemCallData->Argument[1];
-
       osCheckDiskRequest(DiskID, DiskSector);
       break;
-
 
     case SYSNUM_CREATE_PROCESS:
 
@@ -274,7 +270,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       long priority = (long)SystemCallData->Argument[2];
       long* process_id = (long *)SystemCallData->Argument[3];
       long* return_error = (long *)SystemCallData->Argument[4];
-      CreateProcess(name, start_address, priority, PRO_INFO->current, process_id, return_error);
+      osCreateProcess(name, start_address, priority, process_id, return_error);
       break;
 
     case SYSNUM_SUSPEND_PROCESS:
@@ -324,7 +320,6 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       break;
      
     }
-
 }           // End of SVC
 
 /************************************************************************
@@ -390,7 +385,7 @@ void osInit(int argc, char *argv[]) {
     //     all of the other tests.
 
     //create the structures for the OS
-    CreatePRO_INFO();
+    InitializeProcessInfo();
 
     
     //Timer Queue
@@ -437,10 +432,10 @@ void osInit(int argc, char *argv[]) {
 	  char buffer[20];
 	  strcpy(buffer, argv[1]);
 	  long test = GetTestName(buffer);
-	  CreateProcess(argv[1], test, 1, -1, &process_id, &return_error);
+	  SetTestNumber(buffer);
+	  SetPrintOptions(TestRunning);
+	  osCreateProcess(argv[1], test, 1, &process_id, &return_error);
 
-
-	  PRO_INFO->current = 0;//hackhackhack....
 
 	  dispatcher();
 	} 
@@ -466,8 +461,6 @@ void osInit(int argc, char *argv[]) {
 
 
 long GetTestName(char* test_name){
-
-  printf("%s is the test name\n", test_name);
 
   if(strcmp("sample", test_name) == 0){
     return (long)(SampleCode);
