@@ -11,8 +11,8 @@ This file holds the functions that deal with the creation, suspension, resumptio
 #include "readyQueue.h"
 #include "process.h"
 #include "protos.h"
-#include "os_globals.h"
-#include "os_Schedule_Printer.h"
+#include "osGlobals.h"
+#include "osSchedulePrinter.h"
 
 /*
 This function is called in OsInit. It sets the use flag to FREE and creates a LOCK that is associated with each PCB
@@ -436,7 +436,7 @@ void osCreateProcess(char Name[], long StartAddress, long Priority, long *PID, l
   // the second half of the project.  
   void *PageTable = (void *) calloc(2, NUMBER_VIRTUAL_PAGES);
 
-  if(CheckProcessCount() == 0){
+  if(CheckProcessCount() == FALSE){
     aprintf("\n\nError: Reached Max number of Processes\n\n");
     (*ReturnError) = ERR_BAD_PARAM;  //set error message
     return;
@@ -610,8 +610,15 @@ void osTerminateProcess(long TargetPID, long *ReturnError){
     }
   }
   else{ //Delete a process that is not the current process
+    //First have to remove READY Queue if in the READY state
+    INT32 ProcessState;
+    GetProcessState(TargetPID, &ProcessState);
+    if(ProcessState == READY){
+      RemoveFromReadyQueue(GetPCB(TargetPID));
+    }
     DeletePCB(TargetPID);
   }  
  
   (*ReturnError) = ERR_SUCCESS;  //set error message
+  osPrintState("Term", TargetPID, PID);
 }

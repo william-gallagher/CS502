@@ -32,16 +32,16 @@
 #include             <stdlib.h>
 #include             <ctype.h>
 
-//My includes
+//Operating System Includes
 #include "process.h"
 #include "timerQueue.h"
 #include "readyQueue.h"
 #include "diskQueue.h"
 #include "messageBuffer.h"
-#include "os_globals.h"
-#include "os_Schedule_Printer.h"
+#include "osGlobals.h"
+#include "osSchedulePrinter.h"
 
-long GetTestName(char* test_name);
+
 
 //  This is a mapping of system call nmemonics with definitions
 
@@ -74,12 +74,12 @@ void InterruptHandler(void) {
 
     MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
    
-	
     // Get cause of interrupt
     mmio.Mode = Z502GetInterruptInfo;
     mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
     MEM_READ(Z502InterruptDevice, &mmio);
 
+    //Check for errors
     if(mmio.Field4 != ERR_SUCCESS){
       aprintf("\n\nPROB WITH INTERRUPT\n\n");
     }
@@ -87,43 +87,19 @@ void InterruptHandler(void) {
       DeviceID = mmio.Field1;
       Status = mmio.Field2;
 
+      //Print a message describing the Interrupt as long as the print
+      //is enabled
       PrintInterrupt(DeviceID, Status);   
    
-      // HAVE YOU CHECKED THAT THE INTERRUPTING DEVICE FINISHED WITHOUT ERROR?
-
-
-
       if(DeviceID == TIMER_INTERRUPT){
  
 	HandleTimerInterrupt();
       }
-      
       else if(DeviceID >= DISK_INTERRUPT &&
 	      DeviceID <= DISK_INTERRUPT + MAX_NUMBER_OF_DISKS -1){
 
-	long disk_id = DeviceID - DISK_INTERRUPT;
-	DQ_ELEMENT* dqe = RemoveFromDiskQueueHead(disk_id);
-	
-	AddToReadyQueue(dqe->context, dqe->PID, dqe->PCB);
-	free(dqe);
-	//need to check for another element on the disk queue
-	dqe = CheckDiskQueue(disk_id);
-	if((long)dqe != -1){
-	  
-	
-	  //don't need to check if disk is busy- can't be because we just used it
-	  if(dqe->disk_action == READ_DISK){  	
-	    mmio.Mode = Z502DiskRead;
-	  }
-	  else{
-	    mmio.Mode = Z502DiskWrite;
-	  }
-	  mmio.Field1 = dqe->disk_id;
-	  mmio.Field2 = dqe->disk_sector;
-	  mmio.Field3 = dqe->disk_address;
-	
-	  MEM_WRITE(Z502Disk, &mmio);
-	}
+	long DiskID = DeviceID - DISK_INTERRUPT; 
+	HandleDiskInterrupt(DiskID);
 	
       }
       
@@ -132,39 +108,37 @@ void InterruptHandler(void) {
       mmio.Field1 = mmio.Field2 = mmio.Field3 = mmio.Field4 = 0;
       MEM_READ(Z502InterruptDevice, &mmio);
     }
-    
-
 }           // End of InterruptHandler
 
 /************************************************************************
  FAULT_HANDLER
  The beginning of the OS502.  Used to receive hardware faults.
- ************************************************************************/
+************************************************************************/
 
 void FaultHandler(void) {
-    INT32 DeviceID;
-    INT32 Status;
-    MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
+  INT32 DeviceID;
+  INT32 Status;
+  MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
 
-    static BOOL remove_this_from_your_fault_code = TRUE; 
-    static INT32 how_many_fault_entries = 0; 
+  static BOOL remove_this_from_your_fault_code = TRUE; 
+  static INT32 how_many_fault_entries = 0; 
 
-    // Get cause of fault
-    mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
-    mmio.Mode = Z502GetInterruptInfo;
-    MEM_READ(Z502InterruptDevice, &mmio);
-    DeviceID = mmio.Field1;
-    Status   = mmio.Field2;
+  // Get cause of fault
+  mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
+  mmio.Mode = Z502GetInterruptInfo;
+  MEM_READ(Z502InterruptDevice, &mmio);
+  DeviceID = mmio.Field1;
+  Status   = mmio.Field2;
 
-    // This causes a print of the first few faults - and then stops printing!
-    // You can adjust this as you wish.  BUT this code as written here gives
-    // an indication of what's happening but then stops printing for long tests
-    // thus limiting the output.
-    how_many_fault_entries++; 
-    if (remove_this_from_your_fault_code && (how_many_fault_entries < 10)) {
-           aprintf("FaultHandler: Found device ID %d with status %d\n",
-                          (int) mmio.Field1, (int) mmio.Field2);
-    }
+  // This causes a print of the first few faults - and then stops printing!
+  // You can adjust this as you wish.  BUT this code as written here gives
+  // an indication of what's happening but then stops printing for long tests
+  // thus limiting the output.
+  how_many_fault_entries++; 
+  if (remove_this_from_your_fault_code && (how_many_fault_entries < 10)) {
+    aprintf("FaultHandler: Found device ID %d with status %d\n",
+	    (int) mmio.Field1, (int) mmio.Field2);
+  }
     
 } // End of FaultHandler
 
@@ -177,12 +151,9 @@ void FaultHandler(void) {
  incoming calls, but does so only for the first ten calls.  This
  allows the user to see what's happening, but doesn't overwhelm
  with the amount of data.
- ************************************************************************/
+************************************************************************/
 
 void svc(SYSTEM_CALL_DATA *SystemCallData) {
-
-  //just test the state printer
-  //  osPrintState("Call SVC", 1);
 
   short call_type;
 
@@ -193,6 +164,7 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
     Arguments[i] = (long)SystemCallData->Argument[i];
   }
 
+  //Print the state of the SVC while the print is enabled.
   PrintSVC(Arguments, call_type);
 
   long *TimeOfDay;
@@ -203,13 +175,18 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
   long *ReturnError;
 
   long TargetPID;
+  long SourcePID;
   long PID2; //need better name
   
   long DiskID;
   long DiskSector;
   long DiskAddress;
   long SleepTime;
-
+  char *MessageBuffer;
+  long MessageLength;
+  long MessRecLength;
+  long *MessSendLength;
+  long *SenderPID;
     
     switch(call_type){
       
@@ -301,20 +278,19 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
     case SYSNUM_SEND_MESSAGE:
 
       TargetPID = (long)SystemCallData->Argument[0];
-      char *MessageBuffer = (char *)SystemCallData->Argument[1];
-      long MessageLength = (long)SystemCallData->Argument[2];
+      MessageBuffer = (char *)SystemCallData->Argument[1];
+      MessageLength = (long)SystemCallData->Argument[2];
       ReturnError = (long *)SystemCallData->Argument[3];
       osSendMessage(TargetPID, MessageBuffer, MessageLength, ReturnError);
       break;
 
     case SYSNUM_RECEIVE_MESSAGE:
 
-      aprintf("");
-      long SourcePID = (long)SystemCallData->Argument[0];
+      SourcePID = (long)SystemCallData->Argument[0];
       MessageBuffer = (char *)SystemCallData->Argument[1];
-      long MessRecLength = (long)SystemCallData->Argument[2];
-      long* MessSendLength = (long *)SystemCallData->Argument[3];
-      long *SenderPID = (long *)SystemCallData->Argument[4];
+      MessRecLength = (long)SystemCallData->Argument[2];
+      MessSendLength = (long *)SystemCallData->Argument[3];
+      SenderPID = (long *)SystemCallData->Argument[4];
       ReturnError = (long *)SystemCallData->Argument[5];
       osReceiveMessage(SourcePID, MessageBuffer, MessRecLength, MessSendLength, SenderPID, ReturnError);
       break;
@@ -371,6 +347,7 @@ void osInit(int argc, char *argv[]) {
     //  wacky switch being used.  We try to allocate memory here and stop
     //  dead if we're unable to do so.
     //  We're allocating and freeing 8 Meg - that should be more than
+
     //  enough to see if it works.
     void *Temporary = (void *) calloc( 8, 1024 * 1024);
     if ( Temporary == NULL )  {  // Not allocated
@@ -384,33 +361,23 @@ void osInit(int argc, char *argv[]) {
     //  Look at this carefully - this is an example of how you will start
     //     all of the other tests.
 
+
+    
     //create the structures for the OS
     InitializeProcessInfo();
 
-    
-    //Timer Queue
-    if(CreateTimerQueue() == -1){
-      aprintf("\n\nUnable to create Timer Queue!\n\n");
-    }
-    //Disk Queues
+    //Create the Queues and Buffers
+    CreateTimerQueue();
+    CreateReadyQueue();
+    CreateMessageBuffer();
+
     for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
       CreateDiskQueue(i);
     }
 
     //Initialize Disk Queue Locks
     InitializeDiskLocks();
-    
-    //Ready Queue
-    if(CreateReadyQueue() == -1){
-      aprintf("\n\nUnable to create Ready Queue!\n\n");
-    }
-       
-    //Message Buffer
-    if(CreateMessageQueue() == -1){
-      aprintf("\n\nUnable to create Message Queue!\n\n");
-    }
 
-    
     if ((argc > 1) && (strcmp(argv[1], "sample") == 0)) {
         mmio.Mode = Z502InitializeContext;
         mmio.Field1 = 0;
@@ -434,8 +401,9 @@ void osInit(int argc, char *argv[]) {
 	  long test = GetTestName(buffer);
 	  SetTestNumber(buffer);
 	  SetPrintOptions(TestRunning);
-	  osCreateProcess(argv[1], test, 1, &process_id, &return_error);
 
+	  //create the intial process running the code in test.c
+	  osCreateProcess(argv[1], test, 1, &process_id, &return_error);
 
 	  dispatcher();
 	} 
@@ -459,71 +427,3 @@ void osInit(int argc, char *argv[]) {
 
 }                                               // End of osInit
 
-
-long GetTestName(char* test_name){
-
-  if(strcmp("sample", test_name) == 0){
-    return (long)(SampleCode);
-  }
-  if(strcmp("test0", test_name) == 0){
-    TestRunning = 0;
-    return (long)(test0);
-  }
-  if(strcmp("test1", test_name) == 0){
-    TestRunning = 1;
-    return (long)(test1);
-  }    
-  if(strcmp("test2", test_name) == 0){
-    TestRunning = 2;
-    return (long)(test2);
-  }
-  if(strcmp("test3", test_name) == 0){
-    TestRunning = 3;
-    return (long)(test3);
-  }
-  if(strcmp("test4", test_name) == 0){
-    TestRunning = 4;
-    return (long)(test4);
-  }
-  if(strcmp("test5", test_name) == 0){
-    TestRunning = 5;
-    return (long)(test5);
-  }
-  if(strcmp("test6", test_name) == 0){
-    TestRunning = 6;
-    return (long)(test6);
-  }    
-  if(strcmp("test7", test_name) == 0){
-    TestRunning = 7;
-    return (long)(test7);
-  }
-  if(strcmp("test8", test_name) == 0){
-    TestRunning = 8;
-    return (long)(test8);
-  }
-  if(strcmp("test9", test_name) == 0){
-    TestRunning = 9;
-    return (long)(test9);
-  }
-  if(strcmp("test10", test_name) == 0){
-    TestRunning = 10;
-    return (long)(test10);
-  }
-  if(strcmp("test11", test_name) == 0){
-    TestRunning = 11;
-    return (long)(test11);
-  }
-  if(strcmp("test12", test_name) == 0){
-    TestRunning = 12;
-    return (long)(test12);
-  }
-  if(strcmp("test13", test_name) == 0){
-    TestRunning = 13;
-    return (long)(test13);
-  }
-  if(strcmp("test14", test_name) == 0){
-    TestRunning = 14;
-    return (long)(test14);
-  }
-  return 0;
-}

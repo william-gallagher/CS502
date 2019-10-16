@@ -1,3 +1,14 @@
+/*
+messageBuffer.c
+
+This file holds the functions that deal with the Message Buffer and the
+Send and Receive Message functionality. Note that the Message Buffer 
+utilizes the functions found in the Queue Manager. The Message Buffer 
+uses the same functions as the other queues. However, there is no 
+priority in the Message Buffer. The whole buffer must be searched for a 
+message.
+*/
+
 #include "timerQueue.h"
 #include "readyQueue.h"
 #include <string.h>
@@ -5,122 +16,123 @@
 #include <stdlib.h>
 #include "protos.h"
 #include "process.h"
-#include "os_globals.h"
+#include "osGlobals.h"
 #include <unistd.h>
 
-
-
-//======================================================================
 /*
-
-Message Buffer Functions
-
+This function creates the Message Buffer using the functions found in the
+Queue Manager. 
 */
-
-
-
-int CreateMessageQueue(){
-  message_queue_id = QCreate("MQueue");
-  return message_queue_id;
+void CreateMessageBuffer(){
+  message_buffer_id = QCreate("MBuffer");
+  if(message_buffer_id == -1){
+    aprintf("\n\nError: Unable to create Message Buffer!\n\n");
+  }
 }
 
-
-
-
-
 /*
-Counts the number of messages in the Message Buffer
+This function counts the number of messages in the Message Buffer and 
+returns the answer.
 */
 long CountMessagesInBuffer(){
 
   long MessageCount = 0;
   long Index = 0;
   MQ_ELEMENT *mqe;
-  
-  
-  mqe = QWalk(message_queue_id, Index);
+
+  //Step through the Message Buffer
+  mqe = QWalk(message_buffer_id, Index);
   
   while((long)mqe != -1){
     Index++;
     MessageCount++;
-    mqe = QWalk(message_queue_id, Index);
+    mqe = QWalk(message_buffer_id, Index);
   }
 
   return MessageCount;
 }
 
-
+/*
+This function adds to the Message Buffer. Messages are always put on the
+tail of the buffer.
+*/
 void AddToMessageBuffer(MQ_ELEMENT* mqe){
 
   LockLocation(MESSAGE_LOCK);
-
-  QInsertOnTail(message_queue_id, mqe);
-
+  QInsertOnTail(message_buffer_id, mqe);
   UnlockLocation(MESSAGE_LOCK);
 }
 
-MQ_ELEMENT* GetMessageFromBuffer(long SourcePID, long CurrentPID){
+/*
+This function looks for a message in the Message Buffer. It walks
+through the Message Buffer and looks for a matching message. There are 
+a couple of cases:
+The message TargetPID equals the Current PID and the message SenderPID 
+equals ...
 
-  aprintf("In GetMessage %ld is the SenderPID that I am looking for\n", SourcePID);
+*/
+MQ_ELEMENT* GetMessageFromBuffer(long SourcePID, long CurrentPID){
   
-  MQ_ELEMENT* mqe;
+  MQ_ELEMENT *mqe;
   int Index = 0;
 
   LockLocation(MESSAGE_LOCK);
-  
-  QPrint(message_queue_id);
-  
-  mqe = QWalk(message_queue_id, Index);
+
+  mqe = QWalk(message_buffer_id, Index);
   
   while((long)mqe != -1){
-    aprintf("Here is the source pid %ld\nhere is the target pid %ld\n\n", mqe->sender_pid,  mqe->target_pid);
+   
     if((mqe->target_pid == CurrentPID && mqe->sender_pid == SourcePID)||
-       ((mqe->target_pid == -1 || mqe->target_pid == CurrentPID)  && SourcePID == -1)){
+       ((mqe->target_pid == -1 || mqe->target_pid == CurrentPID)
+	&& SourcePID == -1)){
 
-      mqe = QRemoveItem(message_queue_id, (void *)mqe);
-      aprintf("Found a message! %ld is the PID \n\n", mqe->target_pid);
+      mqe = QRemoveItem(message_buffer_id, (void *)mqe);
+      //aprintf("Found a message! %ld is the PID \n\n", mqe->target_pid);
       break;
     }
     Index++;
-    mqe = QWalk(message_queue_id, Index);
+    mqe = QWalk(message_buffer_id, Index);
   }
 
   UnlockLocation(MESSAGE_LOCK);
   
   return mqe;
-
 }
   
+/*
+Handle the Send Message System Call. 
+*/
+void osSendMessage(long TargetPID, char *MessageBuffer,
+		   long MessageLength, long *ReturnError){
 
-
-void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long* ReturnError){
-
-  PROCESS_CONTROL_BLOCK *process;
+  PROCESS_CONTROL_BLOCK *pcb;
   
-    //check to see if process exists
+  //check to see if process exists
   if(TargetPID != -1){
-    process = GetPCB(TargetPID);
-    if(process == NULL){
-      aprintf("Cannot send message to process of a PID that DNE! PID %ld\n\n", TargetPID);
-      (*ReturnError) = 1;
+    pcb = GetPCB(TargetPID);
+    if(pcb == NULL){
+      aprintf("\n\nError: Cannot send message to process of a PID that DNE! PID %ld\n\n", TargetPID);
+      (*ReturnError) = ERR_BAD_PARAM;
       return;
     }
   }
 
+  //Do some error checking:
   //Make sure MessageLength is in the right range
   if(MessageLength < 0 || MessageLength > MAX_MESSAGE_LENGTH){
     aprintf("Message Length out of range!\n\n");
-    (*ReturnError) = 1;
+    (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
 
   //Check to make sure there is room in the Message Buffer
   if(CountMessagesInBuffer() >= MAX_MESSAGES_IN_BUFFER){
     aprintf("Message Buffer Full!\n\n");
-    (*ReturnError) = 1;
+    (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
 
+  //Create the struct to hold all the message data.
   MQ_ELEMENT *mqe = malloc(sizeof(MQ_ELEMENT));
   mqe->target_pid = TargetPID;
   strcpy(mqe->message, MessageBuffer);
@@ -128,7 +140,7 @@ void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long
   mqe->sender_pid = GetCurrentPID();
   AddToMessageBuffer(mqe);
 
-  //check to see what the state of the target process is
+  //check to see what the state of the target process is.
   if(TargetPID != -1){
     INT32 State;
     long ReturnErrorResume;
@@ -137,22 +149,26 @@ void osSendMessage(long TargetPID, char* MessageBuffer, long MessageLength, long
     if(State == SUSPENDED_WAITING_FOR_MESSAGE){
       osResumeProcess(TargetPID, &ReturnErrorResume);
       if(ReturnErrorResume == 1){
-	aprintf("Failure to Resume Process in osSendMessage\n\n");
+	aprintf("\n\nError: Failure to Resume Process\n\n");
       }
       ChangeProcessState(TargetPID, READY);
     }
-
     //set flag in PCB to let process know it has a message waiting
-    process->waiting_for_message = TRUE;
+    pcb->waiting_for_message = TRUE;
   }
-
   //return success
-  (*ReturnError) = 0;
+  (*ReturnError) = ERR_SUCCESS;
 }
 
-void osReceiveMessage(long SourcePID, char* MessageBuffer,
-		      long MessRecLength, long* MessSendLength,
-		      long* SenderPID, long* ReturnError){
+/*
+This function handles the System Call for receive message. It checks
+some parameters and returns an error if these are not up to snuff.
+Then if looks through the Message Buffer for a message that matches the
+criterion. If no message is present the process suspends itself.
+*/
+void osReceiveMessage(long SourcePID, char *MessageBuffer,
+		      long MessRecLength, long *MessSendLength,
+		      long *SenderPID, long *ReturnError){
 
   long CurrentPID = GetCurrentPID();
   
@@ -163,7 +179,7 @@ void osReceiveMessage(long SourcePID, char* MessageBuffer,
 
     if(process == NULL){
       aprintf("Cannot receive message from process that DNE!\n\n");
-      (*ReturnError) = 1;
+      (*ReturnError) = ERR_BAD_PARAM;
       return;
     }
   }
@@ -171,12 +187,12 @@ void osReceiveMessage(long SourcePID, char* MessageBuffer,
   //Make sure MessageLength is in the right range
   if(MessRecLength < 0 || MessRecLength > MAX_MESSAGE_LENGTH){
     aprintf("Can't Receive Message Length out of range!\n\n");
-    (*ReturnError) = 1;
+    (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
 
-  //check Message Buffer for message. If it there is none suspend process
-
+  //check Message Buffer for message.
+  //If it there is none suspend process.
   MQ_ELEMENT *mqe = GetMessageFromBuffer(SourcePID, CurrentPID);
   
   if((long)mqe == -1){
