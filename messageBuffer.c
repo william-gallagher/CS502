@@ -111,7 +111,7 @@ void osSendMessage(long TargetPID, char *MessageBuffer,
   if(TargetPID != -1){
     pcb = GetPCB(TargetPID);
     if(pcb == NULL){
-      aprintf("\n\nError: Cannot send message to process of a PID that DNE! PID %ld\n\n", TargetPID);
+      //aprintf("\n\nError: Cannot send message to process of a PID that DNE! PID %ld\n\n", TargetPID);
       (*ReturnError) = ERR_BAD_PARAM;
       return;
     }
@@ -120,14 +120,14 @@ void osSendMessage(long TargetPID, char *MessageBuffer,
   //Do some error checking:
   //Make sure MessageLength is in the right range
   if(MessageLength < 0 || MessageLength > MAX_MESSAGE_LENGTH){
-    aprintf("Message Length out of range!\n\n");
+    //aprintf("Message Length out of range!\n\n");
     (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
 
   //Check to make sure there is room in the Message Buffer
   if(CountMessagesInBuffer() >= MAX_MESSAGES_IN_BUFFER){
-    aprintf("Message Buffer Full!\n\n");
+    //aprintf("Message Buffer Full!\n\n");
     (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
@@ -178,7 +178,7 @@ void osReceiveMessage(long SourcePID, char *MessageBuffer,
     PROCESS_CONTROL_BLOCK* process = GetPCB(SourcePID);;
 
     if(process == NULL){
-      aprintf("Cannot receive message from process that DNE!\n\n");
+      //aprintf("Cannot receive message from process that DNE!\n\n");
       (*ReturnError) = ERR_BAD_PARAM;
       return;
     }
@@ -186,7 +186,7 @@ void osReceiveMessage(long SourcePID, char *MessageBuffer,
 
   //Make sure MessageLength is in the right range
   if(MessRecLength < 0 || MessRecLength > MAX_MESSAGE_LENGTH){
-    aprintf("Can't Receive Message Length out of range!\n\n");
+    //aprintf("Can't Receive Message Length out of range!\n\n");
     (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
@@ -200,9 +200,15 @@ void osReceiveMessage(long SourcePID, char *MessageBuffer,
     dispatcher();
     mqe = GetMessageFromBuffer(SourcePID, CurrentPID);
   }
-
-  strcpy(MessageBuffer, mqe->message);
-  (*MessSendLength) = mqe->message_length;
-  (*SenderPID) = mqe->sender_pid;
-  (*ReturnError) = 0;
+  //Must check to make sure there is room in the Receiving Buffer for the
+  //the message. If not return an error
+  if(mqe->message_length > MessRecLength){
+    (*ReturnError) = 1;
+  }
+  else{
+    strcpy(MessageBuffer, mqe->message);
+    (*MessSendLength) = mqe->message_length;
+    (*SenderPID) = mqe->sender_pid;
+    (*ReturnError) = 0;
+  }
 }

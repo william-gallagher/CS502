@@ -71,10 +71,6 @@ void GetTimeOfDay(long *TimeOfDay){
   (*TimeOfDay) =  mmio.Field1;
 }
 
-
-
-
-
 /*
 Looks at the Timer Queue and returns the wakeup time of the next item on
 the queue. If there is nothing else on the Timer Queue NextWakeUp is set
@@ -191,7 +187,6 @@ void StartTimer(long SleepTime){
 /*
 Remove the first element of the Timer Queue. Check to see if the Timer needs to be reset. If there is another process with only a brief amount of time until its wake up time it is also put on the Ready Queue.
 */
-
 void HandleTimerInterrupt(){
 
   MEMORY_MAPPED_IO mmio;

@@ -222,7 +222,7 @@ void osSuspendProcess(long PID, long* ReturnError){
   //Check to see if process exists. Return Failure if process DNE
   PROCESS_CONTROL_BLOCK* process = GetPCB(PID);
   if(process == NULL){
-    aprintf("\n\nError: Cannot suspend the process of a PID that DNE!\n\n");
+    //aprintf("\n\nError: Cannot suspend the process of a PID that DNE!\n\n");
     (*ReturnError) = 1;
     return;
   }
@@ -233,7 +233,7 @@ void osSuspendProcess(long PID, long* ReturnError){
   GetProcessState(PID, &process_state);
  
   if(process_state == SUSPENDED){
-    aprintf("Process is already suspended!\n\n");
+    //aprintf("Process is already suspended!\n\n");
     (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
@@ -261,7 +261,7 @@ void osSuspendProcess(long PID, long* ReturnError){
     aprintf("Process is already waiting to be suspended\n\n");
   }
   else{
-   
+
     ChangeProcessState(PID, SUSPENDED);
 
     //Pull PCB from READY Queue
@@ -286,7 +286,7 @@ void osResumeProcess(long PID, long *ReturnError){
   //check to see if process exists. Cannot resume a PCB that DNE.
   PROCESS_CONTROL_BLOCK* process = GetPCB(PID);
   if(process == NULL){
-    aprintf("\n\nError:Cannot resume the process of a PID that DNE!\n\n");
+    //aprintf("\n\nError:Cannot resume the process of a PID that DNE!\n\n");
     (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
@@ -300,7 +300,7 @@ void osResumeProcess(long PID, long *ReturnError){
   if(process_state == RUNNING || process_state == READY ||
      process_state == TIMER || process_state == DISK){
     
-    aprintf("\n\nError: Process Does not need to be resumed\n\n");
+    //aprintf("\n\nError: Process Does not need to be resumed\n\n");
     (*ReturnError) = ERR_BAD_PARAM;
     return;
   }
@@ -430,14 +430,14 @@ ReturnError.
 */
 void osCreateProcess(char Name[], long StartAddress, long Priority, long *PID, long *ReturnError){
 
-  long context;;
+  long context;
 
   // Every process will have a page table.  This will be used in
   // the second half of the project.  
   void *PageTable = (void *) calloc(2, NUMBER_VIRTUAL_PAGES);
 
   if(CheckProcessCount() == FALSE){
-    aprintf("\n\nError: Reached Max number of Processes\n\n");
+    //aprintf("\n\nError: Reached Max number of Processes\n\n");
     (*ReturnError) = ERR_BAD_PARAM;  //set error message
     return;
   } 
@@ -445,13 +445,13 @@ void osCreateProcess(char Name[], long StartAddress, long Priority, long *PID, l
   //Check for proper priority. Anything less than zero is an improper
   //priority
   if(Priority <= 0){
-    aprintf("\n\nError: Improper Priority\n\n");
+    //aprintf("\n\nError: Improper Priority\n\n");
     (*ReturnError) = ERR_BAD_PARAM;  //set error message
     return;
   }
   //Look for any duplicate names
   if(CheckProcessName(Name) == 0){
-    aprintf("\n\nError: Duplicate Name\n\n");
+    //aprintf("\n\nError: Duplicate Name\n\n");
     (*ReturnError) = ERR_BAD_PARAM;  //set error message
     return;
   }
@@ -462,13 +462,13 @@ void osCreateProcess(char Name[], long StartAddress, long Priority, long *PID, l
   long CurrentPID = GetCurrentPID();
   (*PID) = FillPCB(Name, context, CurrentPID, Priority);
 
+  osPrintState("Create", *PID, CurrentPID);
+  
   //set error field to 0 to indicate no error in process creation
   (*ReturnError) = ERR_SUCCESS;  //set error message
 
   ChangeProcessState(*PID, READY);
   AddToReadyQueue(context, *PID, GetPCB(*PID));
-
-  osPrintState("Create", *PID, CurrentPID);
 }
 
 
@@ -552,6 +552,7 @@ void osChangePriority(long PID, long NewPriority, long *ReturnError){
     pcb = GetCurrentPCB();
     pcb->priority = NewPriority;
     (*ReturnError) = ERR_SUCCESS;
+    osPrintState("CHG PRIO", pcb->idnum, pcb->idnum);
     return;
   }
 
@@ -574,6 +575,7 @@ void osChangePriority(long PID, long NewPriority, long *ReturnError){
     pcb->priority = NewPriority;
   }
   (*ReturnError) = ERR_SUCCESS;
+  osPrintState("CHG PRIO", pcb->idnum, GetCurrentPID());
 }
 
 /*

@@ -13,6 +13,7 @@ This file holds the functions that deal with the Disk Queues. Note that there is
 #include "timerQueue.h" 
 #include "readyQueue.h"
 #include "diskQueue.h"
+#include "osSchedulePrinter.h"
 
 /*
 This function creates the Queue for storing the processes that are using
@@ -139,7 +140,7 @@ void osDiskReadRequest(long DiskID, long DiskSector, long DiskAddress){
 
   //Add the process to the disk queue whether the disk is busy or not.
   AddToDiskQueue(DiskID, dq);
-      
+  osPrintState("SUS Disk",curr_proc->idnum, curr_proc->idnum);  
   //set process state to DISK
   ChangeProcessState(dq->PID, DISK);
   
@@ -183,7 +184,7 @@ void osDiskWriteRequest(long DiskID, long DiskSector, long DiskAddress){
 
   //Add the process to the disk queue whether the disk is busy or not.
   AddToDiskQueue(DiskID, dq);
-  
+  osPrintState("SUS Disk",curr_proc->idnum, curr_proc->idnum);
   dispatcher();
 }
 

@@ -248,7 +248,7 @@ void PrintSVC(long Arguments[], INT32 call_type ){
       aprintf("\n\tSVC handler: GetPid\n\tGetting the Process ID for the current Process\n\n");
     }
     else{
-      aprintf("\nSVC handler: GetPid\n\tGetting the Process ID for Process %s\n\n", buffer);
+      aprintf("\n\tSVC handler: GetPid\n\tGetting the Process ID for Process %s\n\n", buffer);
     }
     break;
   
@@ -376,11 +376,26 @@ void SetPrintOptions(INT32 TestRunning) {
     break;
   case 3:
   case 4:
+    SVCPrints = 10;
+    InterruptHandlerPrints = 10;
+    SchedulerPrints = MAX_INT;
+    MemoryPrints = 0;
+    break;
   case 5:
+    SVCPrints = 20;
+    InterruptHandlerPrints = 10;
+    SchedulerPrints = MAX_INT;
+    MemoryPrints = 0;
+    break;
   case 6:
   case 7:
   case 8:
   case 9:
+    SVCPrints = 20;
+    InterruptHandlerPrints = 10;
+    SchedulerPrints = MAX_INT;
+    MemoryPrints = 0;
+    break;
   case 10:
     SVCPrints = 10;
     InterruptHandlerPrints = 10;

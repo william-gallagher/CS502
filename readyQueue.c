@@ -47,7 +47,9 @@ void AddToReadyQueue(long Context, long PID, void* PCB){
   //Insert in Ready Queue. Note that processes are enqueued by priority
   LockLocation(READY_LOCK);
   QInsert(ready_queue_id, Priority, (void *) rqe);
-  UnlockLocation(READY_LOCK); 
+  UnlockLocation(READY_LOCK);
+ChangeProcessState(PID, READY);
+osPrintState("Ready", PID, GetCurrentPID());
 }
 
 
@@ -63,10 +65,10 @@ long RemoveFromReadyQueue(PROCESS_CONTROL_BLOCK* pcb){
   LockLocation(READY_LOCK);
   //Step through Ready Queue and look for pcb
   if((long)QRemoveItem(ready_queue_id, pcb->queue_ptr) == -1){
-    Result = 1;
+    Result = -1;
   }
   else{
-    Result = -1;
+    Result = 1;
   }
   UnlockLocation(READY_LOCK);
  
@@ -86,14 +88,14 @@ long ChangePriorityInReadyQueue(PROCESS_CONTROL_BLOCK *pcb,
 				INT32 NewPriority){
   
   LockLocation(READY_LOCK);
-  
+
   if((long)QRemoveItem(ready_queue_id, pcb->queue_ptr) == -1){
     aprintf("\n\nError: Process not found in Ready Queue\n\n");
     return -1;
   }
   pcb->priority = NewPriority;
   QInsert(ready_queue_id, NewPriority, pcb->queue_ptr);
-  
+
   UnlockLocation(READY_LOCK);
 
   return 1;
@@ -148,20 +150,23 @@ the dispatcher grabs it and starts the context.
 */
 void dispatcher(){
 
-  MEMORY_MAPPED_IO mmio;
+MEMORY_MAPPED_IO mmio;
  
-  while(CheckReadyQueue() == -1){
-     CALL(WasteTime());
-     //We need a sleep so other thread can get LOCK
-     //Otherwise the Interrupt Handler can't get in to add a process
-     //from the Timer or Disk Queues.
-     usleep(1);
-  }
-  
-  RQ_ELEMENT* rqe = RemoveFromReadyQueueHead();
-  long Context = rqe->context;
+while(CheckReadyQueue() == -1){
+CALL(WasteTime());
+//We need a sleep so other thread can get LOCK
+//Otherwise the Interrupt Handler can't get in to add a process
+//from the Timer or Disk Queues.
+usleep(1);
+}
+long CurrentPID = GetCurrentPID();
 
-  osPrintState("Dispatch", rqe->PID, rqe->PID);
+
+RQ_ELEMENT* rqe = RemoveFromReadyQueueHead();
+long Context = rqe->context;
+
+
+osPrintState("Dispatch", rqe->PID, CurrentPID);
   
   ChangeProcessState(rqe->PID ,RUNNING);
 
