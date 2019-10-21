@@ -18,6 +18,6 @@ void CreateReadyQueue();
 long RemoveFromReadyQueue(PROCESS_CONTROL_BLOCK *pcb);
 long ChangePriorityInReadyQueue(PROCESS_CONTROL_BLOCK *pcb,
 				INT32 NewPriority);
-void AddToReadyQueue(long Context, long PID, void *PCB);
+void AddToReadyQueue(long Context, long PID, void *PCB, INT32 PrintFlag);
 
 #endif //READY_QUEUE_H

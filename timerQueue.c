@@ -36,7 +36,10 @@ void LockLocation(INT32 lock){
   READ_MODIFY(lock, 1, SuspendUntilLocked, &ReturnError);
 
   if(ReturnError == FALSE){
-    aprintf("\n\nError: Could Not Obtain the Lock# %d\n\n", lock);
+    aprintf("\n\nError: Could Not Obtain the Lock# %x\n\n", lock);
+  }
+  else{
+    //  aprintf("\ngot the lock in LockLocation\n\n");
   }
 }
 
@@ -52,7 +55,10 @@ void UnlockLocation(INT32 lock){
   READ_MODIFY(lock, 0, SuspendUntilLocked, &ReturnError);
 
   if(ReturnError == FALSE){
-    aprintf("\n\nError: Could not give up Lock# %d\n\n", lock);
+    aprintf("\n\nError: Could not give up Lock# %x\n\n", lock);
+  }
+  else{
+    // aprintf("\ngot the lock in unLockLocation\n\n");
   }
 }
 
@@ -207,9 +213,10 @@ void HandleTimerInterrupt(){
     */
     if(RemovedProcess->state == WAITING_TO_SUSPEND_TIMER){
       ChangeProcessState(tq->PID, SUSPENDED);
+      osPrintState("Suspend", tq->PID, -1);
     }
     else{
-      AddToReadyQueue(tq->context, tq->PID, tq->PCB);
+	AddToReadyQueue(tq->context, tq->PID, tq->PCB, TRUE);
     }
  
     //Check for another timer on the Queue

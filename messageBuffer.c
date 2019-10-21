@@ -18,6 +18,7 @@ message.
 #include "process.h"
 #include "osGlobals.h"
 #include <unistd.h>
+#include "osSchedulePrinter.h"
 
 /*
 This function creates the Message Buffer using the functions found in the
@@ -197,6 +198,7 @@ void osReceiveMessage(long SourcePID, char *MessageBuffer,
   
   if((long)mqe == -1){
     ChangeProcessState(CurrentPID, SUSPENDED_WAITING_FOR_MESSAGE);
+    osPrintState("SUS MES", CurrentPID, CurrentPID);
     dispatcher();
     mqe = GetMessageFromBuffer(SourcePID, CurrentPID);
   }

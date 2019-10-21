@@ -31,7 +31,7 @@ Create a RQ_ELEMENT with fill with Context, PID and a pointer to the
 Process Control Block. Then add the Ready Queue Element to the Ready
 Queue. These elements are enqueued by priority.
 */
-void AddToReadyQueue(long Context, long PID, void* PCB){
+void AddToReadyQueue(long Context, long PID, void* PCB, INT32 PrintFlag){
 
   PROCESS_CONTROL_BLOCK* pcb = (PROCESS_CONTROL_BLOCK*) PCB;
 
@@ -48,8 +48,14 @@ void AddToReadyQueue(long Context, long PID, void* PCB){
   LockLocation(READY_LOCK);
   QInsert(ready_queue_id, Priority, (void *) rqe);
   UnlockLocation(READY_LOCK);
-ChangeProcessState(PID, READY);
-osPrintState("Ready", PID, GetCurrentPID());
+  ChangeProcessState(PID, READY);
+
+  //There are some cases that it does not make sense to use the state printer
+  //For example: When resuming a process we will print with "Resume" field
+  //rather than "Ready"
+  if(PrintFlag == TRUE){
+      osPrintState("Ready", PID, GetCurrentPID());
+  }
 }
 
 
@@ -168,7 +174,7 @@ long Context = rqe->context;
 
 osPrintState("Dispatch", rqe->PID, CurrentPID);
   
-  ChangeProcessState(rqe->PID ,RUNNING);
+ChangeProcessState(rqe->PID, RUNNING);
 
   free(rqe);
   

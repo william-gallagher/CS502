@@ -71,9 +71,9 @@ handled in the order that the requests are made.
 */
 void AddToDiskQueue(long DiskID, DQ_ELEMENT *dqe){
 
-  LockLocation(DISK_LOCK[DiskID]);
+  //LockLocation(DISK_LOCK[DiskID]);
   QInsertOnTail(disk_queue[DiskID], (void *) dqe);
-  UnlockLocation(DISK_LOCK[DiskID]);
+  //UnlockLocation(DISK_LOCK[DiskID]);
 }
 
 /*
@@ -82,9 +82,9 @@ by DiskID. A pointer to the removed DQ_ELEMENT is returned.
 */
 DQ_ELEMENT* RemoveFromDiskQueueHead(long DiskID){
 
-  LockLocation(DISK_LOCK[DiskID]);
+  //LockLocation(DISK_LOCK[DiskID]);
   DQ_ELEMENT* dqe = (DQ_ELEMENT *)QRemoveHead(disk_queue[DiskID]);
-  UnlockLocation(DISK_LOCK[DiskID]);
+  // UnlockLocation(DISK_LOCK[DiskID]);
 
   return dqe;
 }
@@ -96,9 +96,9 @@ element exits
 */
 DQ_ELEMENT* CheckDiskQueue(long DiskID){
 
-  LockLocation(DISK_LOCK[DiskID]);
+  // LockLocation(DISK_LOCK[DiskID]);
   DQ_ELEMENT* dqe = (DQ_ELEMENT *)QWalk(disk_queue[DiskID], 0);
-  UnlockLocation(DISK_LOCK[DiskID]);
+  // UnlockLocation(DISK_LOCK[DiskID]);
 
   return dqe;
 }
@@ -126,6 +126,11 @@ void osDiskReadRequest(long DiskID, long DiskSector, long DiskAddress){
   dq->disk_action = READ_DISK;
     
   long status;
+
+  //The whole disk add operation needs to be atomic.
+  //We have to check to see if the disk is busy and then use it if so.
+  LockLocation(DISK_LOCK[DiskID]);
+  
   CheckDiskStatus(DiskID, &status);
 
   //If the disk is free perform the Read.
@@ -140,7 +145,11 @@ void osDiskReadRequest(long DiskID, long DiskSector, long DiskAddress){
 
   //Add the process to the disk queue whether the disk is busy or not.
   AddToDiskQueue(DiskID, dq);
-  osPrintState("SUS Disk",curr_proc->idnum, curr_proc->idnum);  
+
+  //done with atomic section
+  UnlockLocation(DISK_LOCK[DiskID]);
+  
+  osPrintState("SUS DSK",curr_proc->idnum, curr_proc->idnum);  
   //set process state to DISK
   ChangeProcessState(dq->PID, DISK);
   
@@ -170,6 +179,11 @@ void osDiskWriteRequest(long DiskID, long DiskSector, long DiskAddress){
   dq->disk_action = WRITE_DISK;
       
   long status;
+
+  //The whole disk add operation needs to be atomic.
+  //We have to check to see if the disk is busy and then use it if so.
+  LockLocation(DISK_LOCK[DiskID]);
+  
   CheckDiskStatus(DiskID, &status);
 
   if(status == DEVICE_FREE){
@@ -184,7 +198,15 @@ void osDiskWriteRequest(long DiskID, long DiskSector, long DiskAddress){
 
   //Add the process to the disk queue whether the disk is busy or not.
   AddToDiskQueue(DiskID, dq);
+
+  //done with atomic section
+  UnlockLocation(DISK_LOCK[DiskID]);
+  
   osPrintState("SUS Disk",curr_proc->idnum, curr_proc->idnum);
+
+   //set process state to DISK
+  ChangeProcessState(dq->PID, DISK);
+
   dispatcher();
 }
 
@@ -219,20 +241,24 @@ void osCheckDiskRequest(long DiskID, long DiskSector){
 void HandleDiskInterrupt(long DiskID){
 
   MEMORY_MAPPED_IO mmio;
+
+  //This whole operation needs to be atomic. Remove the item on the disk queue
+  //and check for another without giving up the lock
+  LockLocation(DISK_LOCK[DiskID]);
   
   DQ_ELEMENT* dqe = RemoveFromDiskQueueHead(DiskID);
-
+  
   //Add process to Ready Queue to be resumed
-  AddToReadyQueue(dqe->context, dqe->PID, dqe->PCB);
+  AddToReadyQueue(dqe->context, dqe->PID, dqe->PCB, FALSE);
+  long DiskPID = dqe->PID;
   free(dqe);
   
   //We need to check for another element on the disk queue that needs
   //service.
+  //Watch Out! I have seen the case where the item that was just placed
+  //on the Ready Queue above is detected here and causes problems!
   dqe = CheckDiskQueue(DiskID);
   if((long)dqe != -1){
-	
-    //Note that we don't need to check if disk is busy.
-    //It can't be because we just used it and haven't restarted.
 
     //Set read or write mode
     if(dqe->disk_action == READ_DISK){  	
@@ -246,5 +272,10 @@ void HandleDiskInterrupt(long DiskID){
     mmio.Field3 = dqe->disk_address;
 	
     MEM_WRITE(Z502Disk, &mmio);
+    
   }
+
+  //Done with atomic section.
+  UnlockLocation(DISK_LOCK[DiskID]);
+  osPrintState("Ready", DiskPID, -1);
 }

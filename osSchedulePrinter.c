@@ -74,7 +74,7 @@ SP_INPUT struct.
 */
 void FillDisk(SP_INPUT_DATA* SPInput, int DiskID, INT16* DiskCount){
 
-  int Index = 0;
+  INT32 Index = 0;
   DQ_ELEMENT* dqe;
 
   LockLocation(DISK_LOCK[DiskID]);
@@ -83,7 +83,7 @@ void FillDisk(SP_INPUT_DATA* SPInput, int DiskID, INT16* DiskCount){
 
   //Walk the Disk Queue until can't find anymore items
   while((long)dqe != -1){
-    SPInput->DiskSuspendedProcessPIDs[Index] = (INT16)(dqe->PID);
+    SPInput->DiskSuspendedProcessPIDs[*DiskCount] = (INT16)(dqe->PID);
     Index++;
     (*DiskCount)++;
     dqe = QWalk(disk_queue[DiskID], Index);
@@ -382,13 +382,18 @@ void SetPrintOptions(INT32 TestRunning) {
     MemoryPrints = 0;
     break;
   case 5:
+  case 6:
     SVCPrints = 20;
     InterruptHandlerPrints = 10;
     SchedulerPrints = MAX_INT;
     MemoryPrints = 0;
     break;
-  case 6:
   case 7:
+    SVCPrints = 30;
+    InterruptHandlerPrints = 10;
+    SchedulerPrints = MAX_INT;
+    MemoryPrints = 0;
+    break;
   case 8:
   case 9:
     SVCPrints = 20;
@@ -406,7 +411,7 @@ void SetPrintOptions(INT32 TestRunning) {
   case 12:
   case 13:
   case 14:
-    SVCPrints = 10;
+    SVCPrints = 20;
     InterruptHandlerPrints = 10;
     SchedulerPrints = 100;
     MemoryPrints = 0;
