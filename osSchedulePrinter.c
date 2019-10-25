@@ -293,6 +293,11 @@ void PrintSVC(long Arguments[], INT32 call_type ){
     aprintf("\n\tSVC handler: Check Disk\n\tChecking data on Disk %d\n\n", Arguments[0]);
     break;
 
+  case SYSNUM_FORMAT:
+    aprintf("\n\tSVC handler: Format Disk\n\tFormatting Disk %d\n\n", Arguments[0]);
+    break;
+    
+
   default:
       aprintf("\n\tSVC handler: Call Not Recognized.\n\n");
 
@@ -356,6 +361,33 @@ void SetTestNumber(char TestName[]){
   if(strcmp("test14", TestName) == 0){
     TestRunning = 14;
   }
+  if(strcmp("test21", TestName) == 0){
+    TestRunning = 21;
+  }
+  if(strcmp("test22", TestName) == 0){
+    TestRunning = 22;
+  }
+  if(strcmp("test23", TestName) == 0){
+    TestRunning = 23;
+  }
+  if(strcmp("test24", TestName) == 0){
+    TestRunning = 24;
+  }
+  if(strcmp("test25", TestName) == 0){
+    TestRunning = 25;
+  }
+  if(strcmp("test26", TestName) == 0){
+    TestRunning = 26;
+  }
+  if(strcmp("test27", TestName) == 0){
+    TestRunning = 27;
+  }
+  if(strcmp("test28", TestName) == 0){
+    TestRunning = 28;
+  }
+  if(strcmp("test29", TestName) == 0){
+    TestRunning = 29;
+  }
 }
 
 /*
@@ -414,6 +446,12 @@ void SetPrintOptions(INT32 TestRunning) {
     SVCPrints = 20;
     InterruptHandlerPrints = 10;
     SchedulerPrints = 100;
+    MemoryPrints = 0;
+    break;
+  case 21:
+    SVCPrints = MAX_INT;
+    InterruptHandlerPrints = MAX_INT;
+    SchedulerPrints = 0;
     MemoryPrints = 0;
     break;
   default:
@@ -475,5 +513,33 @@ long GetTestName(char* test_name){
   if(strcmp("test14", test_name) == 0){
     return (long)(test14);
   }
+  if(strcmp("test21", test_name) == 0){
+    return (long)(test21);
+  }
+ if(strcmp("test22", test_name) == 0){
+    return (long)(test22);
+  }
+  if(strcmp("test23", test_name) == 0){
+    return (long)(test23);
+  }
+  if(strcmp("test24", test_name) == 0){
+    return (long)(test24);
+  }
+  if(strcmp("test25", test_name) == 0){
+    return (long)(test25);
+  }
+  if(strcmp("test26", test_name) == 0){
+    return (long)(test26);
+  }
+  if(strcmp("test27", test_name) == 0){
+    return (long)(test27);
+  }
+  if(strcmp("test28", test_name) == 0){
+    return (long)(test28);
+  }
+  if(strcmp("test29", test_name) == 0){
+    return (long)(test29);
+  }
+   
   return 0;
 }

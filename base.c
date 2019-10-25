@@ -40,6 +40,7 @@
 #include "messageBuffer.h"
 #include "osGlobals.h"
 #include "osSchedulePrinter.h"
+#include "diskManagement.h"
 
 
 
@@ -293,6 +294,13 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       SenderPID = (long *)SystemCallData->Argument[4];
       ReturnError = (long *)SystemCallData->Argument[5];
       osReceiveMessage(SourcePID, MessageBuffer, MessRecLength, MessSendLength, SenderPID, ReturnError);
+      break;
+
+    case SYSNUM_FORMAT:
+
+      DiskID = (long)SystemCallData->Argument[0];
+      ReturnError = (long *)SystemCallData->Argument[1];
+      osFormatDisk(DiskID, ReturnError);
       break;
      
     }

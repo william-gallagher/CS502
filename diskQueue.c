@@ -241,6 +241,7 @@ void osCheckDiskRequest(long DiskID, long DiskSector){
 void HandleDiskInterrupt(long DiskID){
 
   MEMORY_MAPPED_IO mmio;
+  INT32 PutOnReadyQueue = TRUE;
 
   //This whole operation needs to be atomic. Remove the item on the disk queue
   //and check for another without giving up the lock
@@ -248,34 +249,82 @@ void HandleDiskInterrupt(long DiskID){
   
   DQ_ELEMENT* dqe = RemoveFromDiskQueueHead(DiskID);
   
-  //Add process to Ready Queue to be resumed
-  AddToReadyQueue(dqe->context, dqe->PID, dqe->PCB, FALSE);
-  long DiskPID = dqe->PID;
-  free(dqe);
-  
+ 
   //We need to check for another element on the disk queue that needs
   //service.
   //Watch Out! I have seen the case where the item that was just placed
   //on the Ready Queue above is detected here and causes problems!
-  dqe = CheckDiskQueue(DiskID);
-  if((long)dqe != -1){
+  DQ_ELEMENT *next_dqe = CheckDiskQueue(DiskID);
+  if((long)next_dqe != -1){
 
+    //There are two possibilities if another element is on the Disk
+    //Queue. It is the same process that just finished a disk action
+    //or it is another process. If it is the same there is no need to
+    //put the PCB on the Ready Queue. In this case just restart the
+    //Disk.
+    if(next_dqe->PID == dqe->PID){
+      PutOnReadyQueue = FALSE;
+    }
+    else{
+      PutOnReadyQueue = TRUE;
+    }
+    
     //Set read or write mode
-    if(dqe->disk_action == READ_DISK){  	
+    if(next_dqe->disk_action == READ_DISK){  	
       mmio.Mode = Z502DiskRead;
     }
     else{
       mmio.Mode = Z502DiskWrite;
     }
-    mmio.Field1 = dqe->disk_id;
-    mmio.Field2 = dqe->disk_sector;
-    mmio.Field3 = dqe->disk_address;
+    mmio.Field1 = next_dqe->disk_id;
+    mmio.Field2 = next_dqe->disk_sector;
+    mmio.Field3 = next_dqe->disk_address;
 	
     MEM_WRITE(Z502Disk, &mmio);
     
+  }//(long)next_dqe != -1
+  else{
+    PutOnReadyQueue = TRUE;
   }
-
+  
   //Done with atomic section.
   UnlockLocation(DISK_LOCK[DiskID]);
-  osPrintState("Ready", DiskPID, -1);
+
+  if(PutOnReadyQueue == TRUE){
+     //Add process to Ready Queue to be resumed
+    AddToReadyQueue(dqe->context, dqe->PID, dqe->PCB, TRUE);
+  }
+  free(dqe);
+}
+
+/*
+This function begins a multiple sector write.
+*/
+void StartDiskWrite(long DiskID){
+
+   MEMORY_MAPPED_IO mmio;
+   long Status;
+
+   //Make sure there is something on the Disk Queue
+   DQ_ELEMENT *dqe = CheckDiskQueue(DiskID);
+   
+   CheckDiskStatus(DiskID, &Status);
+
+   if((long)dqe != -1){
+
+     if(Status == DEVICE_FREE){
+
+       //maybe in the future we will need to test to see if disk
+       //action is read or write.
+       mmio.Mode = Z502DiskWrite;
+       mmio.Field1 = DiskID;
+       mmio.Field2 = dqe->disk_sector;
+       mmio.Field3 = dqe->disk_address;
+	
+       MEM_WRITE(Z502Disk, &mmio);
+     }
+   }
+   else{
+     aprintf("\n\nError: Disk is Busy\n\n");
+   }
 }

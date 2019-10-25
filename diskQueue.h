@@ -15,7 +15,7 @@ void osDiskReadRequest(long DiskID, long DiskSector, long DiskAddress);
 void osDiskWriteRequest(long DiskID, long DiskSector, long DiskAddress);
 void osCheckDiskRequest(long DiskID, long DiskSector);
 void HandleDiskInterrupt(long DiskID);
-
+void StartDiskWrite(long DiskID);
 #endif //DISK_QUEUE_H
 
 
