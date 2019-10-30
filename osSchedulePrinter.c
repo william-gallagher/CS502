@@ -296,7 +296,14 @@ void PrintSVC(long Arguments[], INT32 call_type ){
   case SYSNUM_FORMAT:
     aprintf("\n\tSVC handler: Format Disk\n\tFormatting Disk %d\n\n", Arguments[0]);
     break;
-    
+
+  case SYSNUM_OPEN_DIR:
+    aprintf("\n\tSVC handler: Open Directory\n\tOpening '%s'\n\n", Arguments[1]);
+    break;
+
+  case SYSNUM_CREATE_DIR:
+   aprintf("\n\tSVC handler: Create Directory\n\tCreating Dir '%s'\n\n", Arguments[0]);
+   break;
 
   default:
       aprintf("\n\tSVC handler: Call Not Recognized.\n\n");
@@ -449,6 +456,7 @@ void SetPrintOptions(INT32 TestRunning) {
     MemoryPrints = 0;
     break;
   case 21:
+  case 22:
     SVCPrints = MAX_INT;
     InterruptHandlerPrints = MAX_INT;
     SchedulerPrints = 0;

@@ -188,6 +188,8 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
   long MessRecLength;
   long *MessSendLength;
   long *SenderPID;
+
+  char *FileName;
     
     switch(call_type){
       
@@ -302,7 +304,23 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       ReturnError = (long *)SystemCallData->Argument[1];
       osFormatDisk(DiskID, ReturnError);
       break;
-     
+
+    case SYSNUM_OPEN_DIR:
+
+      DiskID = (long)SystemCallData->Argument[0];
+      FileName = (char *)SystemCallData->Argument[1];
+      ReturnError = (long *)SystemCallData->Argument[2];
+      osOpenDirectory(DiskID, FileName, ReturnError);
+      break;
+
+    case SYSNUM_CREATE_DIR:
+
+      FileName = (char *)SystemCallData->Argument[0];
+      ReturnError = (long *)SystemCallData->Argument[1];
+      osCreateDirectory(FileName, ReturnError);
+      
+      break;
+
     }
 }           // End of SVC
 

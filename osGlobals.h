@@ -30,6 +30,30 @@ This include file has all the OS wide structs and defines.
 #define FREE 0
 #define IN_USE 1
 
+struct{
+
+  unsigned char inode;
+  char name[7];
+  unsigned char creation_time2;
+  unsigned char creation_time1;
+  unsigned char creation_time0;
+  unsigned char file_description; //maybe break up into fields?
+  unsigned short index_location;
+  unsigned short file_size;
+} typedef FILE_HEADER;
+ 
+//define
+struct{
+
+  unsigned char block_byte[16];
+} typedef DISK_BLOCK;
+
+struct{
+  unsigned short address[PGSIZE/2];
+} typedef DISK_INDEX;
+
+
+
 //The struct that holds all the information about a process
 typedef struct{
   INT32 in_use;
@@ -42,6 +66,8 @@ typedef struct{
   INT32 waiting_for_message;
   INT32 LOCK;
   void* queue_ptr;
+  long current_disk;
+  FILE_HEADER current_directory;
 } PROCESS_CONTROL_BLOCK;
 
 //The array that holds all the PCBs
@@ -117,5 +143,11 @@ INT32 disk_queue[MAX_NUMBER_OF_DISKS];
 INT32 DISK_LOCK[MAX_NUMBER_OF_DISKS];
 //Note: The disk queues require a lock for each queue. So dont start
 //using DISK_LOCK_BASE + 1 !!!
+
+
+
+
+
+
 
 #endif //OS_GLOBAL_H

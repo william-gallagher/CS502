@@ -17,6 +17,29 @@ includes the dispatcher.
 #include "diskManagement.h"
 #include "diskQueue.h"
 
+/*
+Copy the contents of a disk sector into the header struct.
+
+ */
+void CopyDiskHeader(DISK_BLOCK *Block, FILE_HEADER *Header){
+
+  Header->inode = Block->block_byte[0];
+
+  //pretty ugly
+  strncpy(Header->name, (char *)&Block->block_byte[1], 7);
+
+  Header->creation_time2 = Block->block_byte[8];
+  Header->creation_time1 = Block->block_byte[9];
+  Header->creation_time0 = Block->block_byte[10];
+
+  Header->file_description = Block->block_byte[11];
+  Header->index_location = Block->block_byte[12] +
+    (Block->block_byte[13]<<8);
+  Header->file_size = Block->block_byte[14] +
+    (Block->block_byte[15]<<8);
+   
+}
+
 void SetBit(unsigned char *CharPtr, INT32 position){
   (*CharPtr) |= (0x80 >> position);
 }
@@ -129,6 +152,12 @@ void osFormatDisk(long DiskID, long *ReturnError){
   RootHeader[14] = 0; //Length of File. Should be 0?
   RootHeader[15] = 0;
 
+  DISK_BLOCK *Block = (DISK_BLOCK *)RootHeader;
+  FILE_HEADER Header;
+
+  CopyDiskHeader(Block, &Header);
+
+  
   //Now do the Root Header Index
   unsigned char RootIndex[16];
   RootIndex[0] = 0x13;;
@@ -139,7 +168,7 @@ void osFormatDisk(long DiskID, long *ReturnError){
   RootIndex[5] = 0;
   RootIndex[6] = 0x16;  
   RootIndex[7] = 0;
-  RootIndex[8] = 0x17;  //set the time. Supposedly doesnt matter
+  RootIndex[8] = 0x17; 
   RootIndex[9] = 0;
   RootIndex[10] = 0x18;
   RootIndex[11] = 0; //File Description
@@ -152,7 +181,7 @@ void osFormatDisk(long DiskID, long *ReturnError){
   
   
   //set the parts of the bitmap that are in use
-  for(INT32 i=0; i<=0x1A; i++){
+  for(INT32 i=0; i<=0x12; i++){
     SetBitInBitMap(i, BitArray, BitModified);
   }
 
@@ -177,13 +206,14 @@ void osFormatDisk(long DiskID, long *ReturnError){
   AddToDiskQueue(DiskID, dqe);
 
   //Write the Root Directory Header
-  dqe = CreateDiskQueueElement(DiskID, 0x12, (long)RootHeader,
+  dqe = CreateDiskQueueElement(DiskID, 0x11, (long)RootHeader,
 			       CurrentContext, CurrentPID, CurrentPCB);
   AddToDiskQueue(DiskID, dqe);
 
-  //Write the Root Directory Index
-    dqe = CreateDiskQueueElement(DiskID, 0x13, (long)RootIndex,
-			       CurrentContext, CurrentPID, CurrentPCB);
+  //Lets hold off on this for now. Probably easier if just keep 0's in
+  //index.  Write the Root Directory Index dqe =
+  CreateDiskQueueElement(DiskID, 0x12, (long)RootIndex,
+			 CurrentContext, CurrentPID, CurrentPCB);
   AddToDiskQueue(DiskID, dqe);
   
 
@@ -207,6 +237,125 @@ void osFormatDisk(long DiskID, long *ReturnError){
   (*ReturnError) = ERR_SUCCESS;
   
 }
+
+/*
+Still have to handle cases other than root dir
+Need to work on returning the error message
+*/
+void osOpenDirectory(long DiskID, char *FileName, long *ReturnError){
+
+
+  PROCESS_CONTROL_BLOCK *pcb = GetCurrentPCB();
+  
+  if(strcmp(FileName, "root") == 0){
+    aprintf("Opening the root directory of Disk %d\n", DiskID);
+    //need to read in sector 0
+    DISK_BLOCK Block0;
+    osDiskReadRequest(DiskID, 0, (long) &Block0);
+
+    for(int i=0; i<PGSIZE; i++){
+      // aprintf("%x ", Block0.block_byte[i]);
+    }
+    //now have to get the root header
+    long RootHeaderLocation = (Block0.block_byte[9]<<8) + Block0.block_byte[8];
+   
+    DISK_BLOCK RootHeader;
+    osDiskReadRequest(DiskID, RootHeaderLocation, (long) &RootHeader);
+    for(int i=0; i<PGSIZE; i++){
+      // aprintf("%x ", RootHeader.block_byte[i]);
+    }
+
+    CopyDiskHeader(&RootHeader, &pcb->current_directory);
+    pcb->current_disk = DiskID;
+    
+  } //end root
+}
+
+//Disk Sector has already been determined to be available.
+INT32 GetSpot1(long DiskID, DISK_INDEX *Index, short DiskSector, short CurrentDiskSector){
+ 
+  aprintf("At level 1 of Dir\n");
+    
+
+  for(INT32 i=0; i<PGSIZE/2; i++){
+    if(Index->address[i] == 0){
+      aprintf("The %x slot is available\nCode to write the header to Disk Sector %x should be inserted here\n", i , DiskSector);
+
+      Index->address[i] = DiskSector;
+      //update file hierarchy on disk
+
+      long CurrentPID = GetCurrentPID();
+      long CurrentContext = osGetCurrentContext();
+      void* CurrentPCB = GetCurrentPCB();
+      DQ_ELEMENT *dqe;
+      dqe = CreateDiskQueueElement(DiskID, CurrentDiskSector, (long)Index,
+				   CurrentContext, CurrentPID, CurrentPCB);
+      AddToDiskQueue(DiskID, dqe);
+      return TRUE;
+      
+    }
+  }
+
+  return FALSE;
+
+}
+
+//Disk Sector has already been determined to be available.
+INT32 GetSpot2(long DiskID, DISK_INDEX *Index, short DiskSector, short CurrentDiskSector){
+ 
+  aprintf("At level 2 of Dir\n");
+    
+
+  for(INT32 i=0; i<PGSIZE/2; i++){
+    if(Index->address[i] == 0){
+      aprintf("The %x slot is available\nWe need to create a level 1 index\n", i , DiskSector);
+
+      Index->address[i] = DiskSector;
+      //update file hierarchy on disk
+
+     
+      return TRUE;
+      
+    }
+  }
+
+  return FALSE;
+
+}
+
+/*
+Need to check for errors etc
+Enough Space...
+Name already exists....
+Name too long or contains illegal characters...
+Lots of work...
+*/
+
+void osCreateDirectory(char *FileName, long *ReturnError){
+
+  aprintf("Create a Directory with %s name\n", FileName);
+
+  //first read in sector 0
+
+  //get the bitmap address
+  //maybe make a struct to hold info about bitmap incl what has changed to
+  //write back later
+
+  //read in bitmap address until find two (3?) blocks available
+  //Needs may vary
+
+  //create the dir header and index. Mark Bitmap as changed.. Write? Don't Write?
+
+  //Now have to traverse the directory structure and find a place to store a pointer to the new header.
+
+  //Might need to create indices as we go....
+
+  //set error and return.
+}
+
+
+
+
 /*
 
 void AddToDiskQueue(long DiskID, DQ_ELEMENT *dqe);
