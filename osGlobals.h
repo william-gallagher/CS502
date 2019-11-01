@@ -41,16 +41,33 @@ struct{
   unsigned short index_location;
   unsigned short file_size;
 } typedef FILE_HEADER;
- 
+
 //define
 struct{
 
-  unsigned char block_byte[16];
+  unsigned char Byte[16];
 } typedef DISK_BLOCK;
+
+struct{
+  DISK_BLOCK Block[2048];
+  unsigned char Modified[2048];
+} typedef DISK_CACHE;
+
+
 
 struct{
   unsigned short address[PGSIZE/2];
 } typedef DISK_INDEX;
+
+#define BIT_MAP_LENGTH 16
+
+struct{
+  long DiskID;
+  short StartAddress;
+  unsigned char flags[BIT_MAP_LENGTH];
+  DISK_BLOCK *block[BIT_MAP_LENGTH];
+}typedef BIT_MAP;
+  
 
 
 
@@ -68,6 +85,7 @@ typedef struct{
   void* queue_ptr;
   long current_disk;
   FILE_HEADER current_directory;
+  DISK_CACHE *cache;
 } PROCESS_CONTROL_BLOCK;
 
 //The array that holds all the PCBs
