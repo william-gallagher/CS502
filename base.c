@@ -317,9 +317,19 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
 
       FileName = (char *)SystemCallData->Argument[0];
       ReturnError = (long *)SystemCallData->Argument[1];
-      osCreateDirectory(FileName, ReturnError);
+      osCreateFile(FileName, ReturnError, 1);
       
       break;
+      
+    case SYSNUM_CREATE_FILE:
+
+      FileName = (char *)SystemCallData->Argument[0];
+      ReturnError = (long *)SystemCallData->Argument[1];
+      osCreateFile(FileName, ReturnError, 0);
+      
+      break;
+
+      
 
     }
 }           // End of SVC

@@ -17,6 +17,27 @@ includes the dispatcher.
 #include "diskManagement.h"
 #include "diskQueue.h"
 
+void InitializeInodes(){
+
+  for(INT16 i=0; i<32; i++){
+    InodeArray[i] = 0;
+  }
+}
+
+void GetInode(unsigned char *NewInode){
+
+  for(INT16 i=0; i<32; i++){
+    if(InodeArray[i] == 0){
+      InodeArray[i] = 1;
+      (*NewInode) = i;
+      return;
+    }
+  }
+  aprintf("\n\nERROR: All Inodes Allocated\n\n");
+  (*NewInode) = -1;
+}
+
+
 DISK_CACHE* CreateDiskCache(){
 
   DISK_CACHE *Cache = malloc(sizeof(DISK_CACHE));
@@ -112,6 +133,18 @@ void SetFileName(DISK_BLOCK *Header, char *FileName){
   }
 }
 
+/*
+Copy the File Name stored in bytes 1 to 8 of the Header into the Buffer
+*/
+void GetFileName(DISK_BLOCK *Header, char *Buffer){
+
+  for(INT16 i=0; i<7; i++){
+    Buffer[i] = Header->Byte[i+1];
+  }
+  Buffer[7] = '\0';
+}
+  
+
 void SetCreationTime(DISK_BLOCK *Header, INT32 Time){
 
   Header->Byte[8] = (0x000000FF) & Time;
@@ -132,7 +165,6 @@ void SetFileOrDirectory(DISK_BLOCK *Header, INT32 Type){
   else{ //Type == DIR
     Header->Byte[11] |= 0x01;
   }
-  aprintf("Here is the value after setting the dir %x\n", Header->Byte[11]);
 }
 
 /*
@@ -144,15 +176,19 @@ void SetFileLevel(DISK_BLOCK *Header, unsigned char Level){
   Level = Level<<1;
   unsigned char Mask = 0xF9;
   Header->Byte[11] = (Mask & Header->Byte[11]) + Level;
-  aprintf("after set LEvel %x\n", Header->Byte[11]);
 }
+
+void GetParentInode(DISK_BLOCK *ParentHeader, unsigned char *ParentInode){
+
+  (*ParentInode) = ParentHeader->Byte[0];
+}
+  
 
 void SetParentInode(DISK_BLOCK *Header, unsigned char Parent){
 
   Parent = Parent<<3;
   unsigned char Mask = 0x07;
   Header->Byte[11] = (Mask & Header->Byte[11]) + Parent;
-    aprintf("after setting parent %x\n", Header->Byte[11]);
 }
 
 void SetIndexLocation(DISK_BLOCK *Header, INT16 Location){
@@ -182,32 +218,65 @@ void CreateSubIndex(DISK_BLOCK *Index, INT16 SubIndexLocation,
   Index->Byte[PositionInIndex*2+1] = SubIndexLocation;
 }
   
+void GetRootLocation(DISK_BLOCK *Sector0, INT16 *RootAddress){
 
+  (*RootAddress) = Sector0->Byte[8];
+  (*RootAddress) = (Sector0->Byte[9] << 8) + (*RootAddress);
 
+  aprintf("Here is the root address %x\n", *RootAddress);
+}
 
+void GetHeaderIndexSector(DISK_BLOCK *Header, INT16 *IndexAddress){
+
+  (*IndexAddress) = (Header->Byte[13]<<8) + Header->Byte[12];
+}
+
+void GetAvailableIndexSpot(DISK_BLOCK *Index, INT16 *Position){
+
+  for(INT16 i=0; i<PGSIZE; i=i+2){
+
+    if(Index->Byte[i] == 0 && Index->Byte[i+1] == 0){
+      (*Position) = i;
+      return;
+    }
+  }
+  (*Position) = -1;
+  return;
+}
 
 /*
-Copy the contents of a disk sector into the header struct.
+Check to see if the spot given by Position in the Directory or File Index is 
+occupied. Return TRUE if that is the case. Otherwise return FALSE.
 */
+INT32 CheckIndexSpot(DISK_BLOCK *Index, INT16 Position){
 
-void CopyDiskHeader(DISK_BLOCK *Block, FILE_HEADER *Header){
+  if(Index->Byte[Position] == 0 && Index->Byte[Position+1] == 0){
+    return FALSE;
+  }
+  else{
+    return TRUE;
+  }
+}  
 
-  Header->inode = Block->Byte[0];
+DISK_BLOCK* GetSubDirectoryHeader(DISK_CACHE *Cache, DISK_BLOCK *Index,
+			   INT16 Position){
 
-  //pretty ugly
-  strncpy(Header->name, (char *)&Block->Byte[1], 7);
+  DISK_BLOCK *SubDirectoryHeader;
+  INT16 SubDirectorySector = (Index->Byte[Position]<<8) +
+    Index->Byte[Position+1];
 
-  Header->creation_time2 = Block->Byte[8];
-  Header->creation_time1 = Block->Byte[9];
-  Header->creation_time0 = Block->Byte[10];
-
-  Header->file_description = Block->Byte[11];
-  Header->index_location = Block->Byte[12] +
-    (Block->Byte[13]<<8);
-  Header->file_size = Block->Byte[14] +
-    (Block->Byte[15]<<8);
-   
+  SubDirectoryHeader = &Cache->Block[SubDirectorySector];
+  return SubDirectoryHeader;
 }
+
+void SetIndexSpot(DISK_BLOCK *Index, INT16 Position, INT16 NewHeader){
+
+  Index->Byte[Position] = NewHeader>>8;
+  Index->Byte[Position + 1] = (NewHeader & 0x00FF);
+  
+}
+
+
 
 void SetBit(unsigned char *CharPtr, INT16 position){
   (*CharPtr) |= (0x80 >> position);
@@ -236,7 +305,26 @@ void SetBitInBitMap(DISK_CACHE* Cache, INT16 SectorNumber){
   Cache->Modified[BitRow] = 1;
 }
 
+/*
+Look through the current directory to find the directory given by DirName
+*/
+DISK_BLOCK* FindDirectory(DISK_CACHE *Cache, DISK_BLOCK *Index, char *DirName){
+
+  DISK_BLOCK *SubDirectory = NULL;
+  char Buffer[8];
   
+  for(INT16 i=0; i<PGSIZE; i=i+2){
+    if(CheckIndexSpot(Index, i) == TRUE){
+      SubDirectory = GetSubDirectoryHeader(Cache, Index, i);
+      GetFileName(SubDirectory, Buffer);
+      aprintf("Here is the sub dir name %s\n", Buffer);
+      if(strcmp(DirName, Buffer) == 0){
+        return SubDirectory;
+      }
+    }
+  }
+  return NULL;
+}
 
   
   
@@ -269,6 +357,25 @@ INT32 CheckBitMapRow(DISK_BLOCK *BitMapRow){
   return -1;
 }
 
+/*
+Return the position of the first bit to be 0. Work from left to right.
+Note that 1101 1111 would return 2 as the second bit from the left is not set.
+*/
+INT16 TestBit(unsigned char Byte){
+
+  INT16 position = 0;
+  unsigned int Mask = 0x80;
+  
+  for(INT16 i=7; i>=0; i--){
+    if((Byte & Mask) == 0){
+      return position;
+    }
+    position++;
+    Mask = Mask>>1;
+  }
+  aprintf("\n\nError: All Bits Set\n\n");
+  return -1;
+}
 
 
 /*
@@ -277,39 +384,27 @@ the next available sector.
 We need to fill the Bit Map structure with Disk Reads as necessary.
 Set the flag to indicate a change has been made in the bitmap sectors.
 */
-INT32 GetAvailableBlock(BIT_MAP *Map){
+void GetAvailableSector(DISK_CACHE *Cache, INT16 *AvailableSector){
 
-  INT32 i = Map->StartAddress;
+  INT16 BitMapStart = 1;
   
-  
-    if(Map->block[i] == NULL){
-      Map->block[i] = malloc(sizeof(DISK_BLOCK));
-      osDiskReadRequest(Map->DiskID, i, (long)Map->block[i]);
+  for(INT16 i=BitMapStart; i<BitMapStart+0x10; i++){
+    for(INT16 j=0; j<16; j++){
+      if(Cache->Block[i].Byte[j] != 0xFF){
+
+	INT16 Position = TestBit(Cache->Block[i].Byte[j]);
+
+	(*AvailableSector) = 128*(i-1) + 8*j + Position;
+	SetBitInBitMap(Cache, *AvailableSector);
+	return;
+      }
     }
-
-  
-
-    return 0;
-}
-
-/*
-Return the position of the first bit to be 0. Work from left to right.
-Note that 1101 1111 would return 2 as the second bit from the left is not set.
-*/
-INT32 TestBit(unsigned char Byte){
-
-  INT32 position = 0;
-  
-  for(INT32 i=7; i>=0; i--){
-
-    if((Byte>>i) == 0){
-      return position;
-    }
-    position++;
   }
-  aprintf("\n\nError: All Bits Set\n\n");
-  return -1;
+  //If Nothing is available on disk set return to 0
+  (*AvailableSector) = 0;
+  return;
 }
+
 
 
 
@@ -372,27 +467,20 @@ void osFormatDisk(long DiskID, long *ReturnError){
   Cache->Modified[0] = 1;
   
   DISK_BLOCK *RootHeader = &(Cache->Block[0x11]);
-  SetInode(RootHeader, 0);  //eventually need a better way to do this
+
+  unsigned char NewInode;
+  GetInode(&NewInode);
+  SetInode(RootHeader, NewInode);  //eventually need a better way to do this
   char* DirName = "root";
   SetFileName(RootHeader, DirName);
   SetCreationTime(RootHeader, 0x123);
   SetFileOrDirectory(RootHeader, DIR);
-  SetFileLevel(RootHeader, 2);
+  SetFileLevel(RootHeader, 1); //Set level to 1. See we ever need 2 lvls
   SetParentInode(RootHeader, 0x1F);
   SetIndexLocation(RootHeader, 0x0012);
   SetFileLength(RootHeader, 0);
 
   Cache->Modified[0x11] = 1;
-  
-  DISK_BLOCK *RootIndex = &Cache->Block[0x12];
-
-  INT16 UnusedSector = 0x13;
-
-  for(int i=0; i<8; i++){
-    CreateSubIndex(RootIndex, UnusedSector, i);
-    UnusedSector++;
-  }
-
   Cache->Modified[0x12] = 1;
   
   //set the parts of the bitmap that are in use
@@ -407,7 +495,6 @@ void osFormatDisk(long DiskID, long *ReturnError){
   //Atomic Section
   LockLocation(DISK_LOCK[DiskID]);
   
-  
   DQ_ELEMENT *dqe;
 
   for(INT16 i=0; i<0x0600; i++){
@@ -420,29 +507,7 @@ void osFormatDisk(long DiskID, long *ReturnError){
       Cache->Modified[i] = 0;
     }
   }
-    /*
-  
-  //Write the Root Directory Header
-  dqe = CreateDiskQueueElement(DiskID, 0x11, (long)(RootHeader),
-			       CurrentContext, CurrentPID, CurrentPCB);
-  AddToDiskQueue(DiskID, dqe);
-
-  //Lets hold off on this for now. Probably easier if just keep 0's in
-  //index.  Write the Root Directory Index dqe =
-  dqe = CreateDiskQueueElement(DiskID, 0x12, (long)(&RootIndex),
-			 CurrentContext, CurrentPID, CurrentPCB);
-  AddToDiskQueue(DiskID, dqe);
-  
-
-  for(INT32 i=0; i<16; i++){
-    dqe = CreateDiskQueueElement(DiskID, i,
-				 (long)(&Cache->Block[i]),
-				 CurrentContext, CurrentPID,
-				 CurrentPCB);
-    AddToDiskQueue(DiskID, dqe);
-  }
-*/
-  
+   
   StartDiskWrite(DiskID);
 
   UnlockLocation(DISK_LOCK[DiskID]);
@@ -460,30 +525,154 @@ void osOpenDirectory(long DiskID, char *FileName, long *ReturnError){
 
 
   PROCESS_CONTROL_BLOCK *pcb = GetCurrentPCB();
+
+  DISK_CACHE *Cache = pcb->cache;
   
   if(strcmp(FileName, "root") == 0){
     aprintf("Opening the root directory of Disk %d\n", DiskID);
-    //need to read in sector 0
-    DISK_BLOCK Block0;
-    osDiskReadRequest(DiskID, 0, (long) &Block0);
 
-    for(int i=0; i<PGSIZE; i++){
-      // aprintf("%x ", Block0.Byte[i]);
-    }
-    //now have to get the root header
-    long RootHeaderLocation = (Block0.Byte[9]<<8) + Block0.Byte[8];
-   
-    DISK_BLOCK RootHeader;
-    osDiskReadRequest(DiskID, RootHeaderLocation, (long) &RootHeader);
-    for(int i=0; i<PGSIZE; i++){
-      // aprintf("%x ", RootHeader.Byte[i]);
-    }
+    DISK_BLOCK *Sector0 = &Cache->Block[0];
 
-    CopyDiskHeader(&RootHeader, &pcb->current_directory);
+    INT16 RootLocation;
+    GetRootLocation(Sector0, &RootLocation);
+
+    DISK_BLOCK *RootHeader = &Cache->Block[RootLocation];
+
+    pcb->current_directory = RootHeader;
     pcb->current_disk = DiskID;
-    
+
+    (*ReturnError) = ERR_SUCCESS;
+    return;
   } //end root
+
+  aprintf("Looking for the sub Directory %s\n", FileName);
+ 
+
+  DISK_BLOCK *Header = pcb->current_directory;
+  DISK_BLOCK *SubDirectory;
+  INT16 IndexAddress;
+  GetHeaderIndexSector(Header, &IndexAddress);
+  
+  DISK_BLOCK *Index = &Cache->Block[IndexAddress];
+  SubDirectory = FindDirectory(Cache, Index, FileName);
+
+  pcb->current_directory = SubDirectory;
+  
 }
+
+
+void osCreateFile(char *FileName, long *ReturnError, INT32 FileOrDir){
+
+  if(FileOrDir == DIR)
+    aprintf("Create a Directory with %s name\n", FileName);
+
+  if(FileOrDir == FILE)
+    aprintf("Create a File with %s name\n", FileName);
+
+  long CurrentPID = GetCurrentPID();
+  long CurrentContext = osGetCurrentContext();
+  PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
+
+  // long CurrentContext = osGetCurrentContext();
+  // long CurrentPID = GetCurrentPID();
+  long DiskID = CurrentPCB->current_disk;
+  DISK_CACHE *Cache = CurrentPCB->cache;
+
+
+  DISK_BLOCK *CurrentDirectory = CurrentPCB->current_directory;
+
+  //read in bitmap address until find two blocks available
+  INT16 NewHeaderSector;
+  INT16 NewIndexSector;
+
+  GetAvailableSector(Cache, &NewHeaderSector);
+  GetAvailableSector(Cache, &NewIndexSector);
+  
+  INT16 IndexSector;
+  GetHeaderIndexSector(CurrentDirectory, &IndexSector);
+
+  DISK_BLOCK *Index = &Cache->Block[IndexSector];
+
+  INT16 Position;
+  GetAvailableIndexSpot(Index, &Position);
+  
+  //Set new directory header in Current Directory header
+  SetIndexSpot(Index, Position, NewHeaderSector);
+  Cache->Modified[IndexSector] = 1;
+  
+  //Spot for new header
+  DISK_BLOCK *NewHeader = &Cache->Block[NewHeaderSector];
+
+  unsigned char NewInode;
+  GetInode(&NewInode);
+  SetInode(NewHeader, NewInode);  //eventually need a better way to do this
+  SetFileName(NewHeader, FileName);
+  SetCreationTime(NewHeader, 0x123);
+  if(FileOrDir == DIR){
+    SetFileOrDirectory(NewHeader, DIR);
+    SetFileLevel(NewHeader, 1); //Set level to 1. See we ever need 2 lvls
+  }
+  else{
+    SetFileOrDirectory(NewHeader, FILE);
+    SetFileLevel(NewHeader, 3); //Set level to 3
+  }
+
+  unsigned char ParentInode;
+  GetParentInode(CurrentDirectory, &ParentInode);
+  
+  SetParentInode(NewHeader, ParentInode);
+  SetIndexLocation(NewHeader, NewIndexSector);
+  SetFileLength(NewHeader, 0);
+
+  Cache->Modified[NewHeaderSector] = 1;
+
+
+    //Atomic Section
+  LockLocation(DISK_LOCK[DiskID]);
+  
+  
+  DQ_ELEMENT *dqe;
+
+  for(INT16 i=0; i<0x0600; i++){
+    if(Cache->Modified[i] == 1){
+      
+      dqe = CreateDiskQueueElement(DiskID, i, (long)(&Cache->Block[i]),
+				   CurrentContext, CurrentPID, CurrentPCB);
+      AddToDiskQueue(DiskID, dqe);
+
+      Cache->Modified[i] = 0;
+    }
+  }
+   
+  StartDiskWrite(DiskID);
+
+  UnlockLocation(DISK_LOCK[DiskID]);
+
+  dispatcher();
+}
+
+
+
+
+
+
+/*
+
+void AddToDiskQueue(long DiskID, DQ_ELEMENT *dqe);
+ typedef struct{
+
+  long disk_action;  
+  long disk_id;
+  long disk_sector;
+  long disk_address;
+  
+  long context;
+  long PID;
+  void* PCB;
+  }DQ_ELEMENT;
+*/
+
+/*
 
 //Disk Sector has already been determined to be available.
 INT32 GetSpot1(long DiskID, DISK_INDEX *Index, short DiskSector, short CurrentDiskSector){
@@ -536,73 +725,4 @@ INT32 GetSpot2(long DiskID, DISK_INDEX *Index, short DiskSector, short CurrentDi
   return FALSE;
 
 }
-
-/*
-Need to check for errors etc
-Enough Space...
-Name already exists....
-Name too long or contains illegal characters...
-Lots of work...
-*/
-
-void osCreateDirectory(char *FileName, long *ReturnError){
-
-  aprintf("Create a Directory with %s name\n", FileName);
-  
-  //first read in sector 0
-  PROCESS_CONTROL_BLOCK *pcb = GetCurrentPCB();
-  // long CurrentContext = osGetCurrentContext();
-  // long CurrentPID = GetCurrentPID();
-  long DiskID = pcb->current_disk;
-
-  DISK_BLOCK Sector0;
-
-  //not sure about the lock situation here
-  osDiskReadRequest(DiskID, 0, (long)(&Sector0));
-
-  /*
-  DiskSector[4] = 0x04; //Bitmap Size is 0x10. 4*4
-  DiskSector[6] = 0x01; //LSB of Bitmap Location
-  DiskSector[7] = 0x00; //MSB of Bitmap Location
-  */
-
-  //maybe dont have to get length. All should be the same - 16 blocks
-  short BitmapLength = (Sector0.Byte[4])*4; //have to mult by 4
-  short BitmapLocation = (Sector0.Byte[7]<<8) + Sector0.Byte[6];
-
-  aprintf("Here is the bitmap location and size\n %d %x\n", BitmapLocation, BitmapLength);
-
-  BIT_MAP Map;
-  InitializeBitStruct(&Map, DiskID, BitmapLocation);
-
-  //read in bitmap address until find two blocks available
-  INT32 NewHeaderSector = GetAvailableBlock(&Map);
-  INT32 NewIndexSector = GetAvailableBlock(&Map);
-
-  //create the dir header and index. Mark Bitmap as changed.. Write? Don't Write?
-
-  //Now have to traverse the directory structure and find a place to store a pointer to the new header.
-
-  //Might need to create indices as we go....
-
-  //set error and return.
-}
-
-
-
-
-/*
-
-void AddToDiskQueue(long DiskID, DQ_ELEMENT *dqe);
- typedef struct{
-
-  long disk_action;  
-  long disk_id;
-  long disk_sector;
-  long disk_address;
-  
-  long context;
-  long PID;
-  void* PCB;
-  }DQ_ELEMENT;
 */

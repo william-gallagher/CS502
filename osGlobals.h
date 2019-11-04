@@ -84,7 +84,8 @@ typedef struct{
   INT32 LOCK;
   void* queue_ptr;
   long current_disk;
-  FILE_HEADER current_directory;
+  DISK_BLOCK *current_directory;
+  DISK_BLOCK *current_index;
   DISK_CACHE *cache;
 } PROCESS_CONTROL_BLOCK;
 
