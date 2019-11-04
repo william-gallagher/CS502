@@ -305,6 +305,19 @@ void PrintSVC(long Arguments[], INT32 call_type ){
    aprintf("\n\tSVC handler: Create Directory\n\tCreating Dir '%s'\n\n", Arguments[0]);
    break;
 
+  case SYSNUM_CREATE_FILE:
+    aprintf("\n\tSVC handler: Create File\n\tCreating File '%s'\n\n", Arguments[0]);
+    break;
+
+  case SYSNUM_OPEN_FILE:
+    aprintf("\n\tSVC handler: Open File\n\tOpening File '%s'\n\n", Arguments[0]);
+    break;
+
+  case SYSNUM_WRITE_FILE:
+
+    aprintf("\n\tSVC handler: Write File\n\tWriting Logical Block %x to Inode %x\n\n", Arguments[1], Arguments[0]);    
+    break;
+    
   default:
       aprintf("\n\tSVC handler: Call Not Recognized.\n\n");
 
@@ -457,6 +470,7 @@ void SetPrintOptions(INT32 TestRunning) {
     break;
   case 21:
   case 22:
+  case 23:
     SVCPrints = MAX_INT;
     InterruptHandlerPrints = MAX_INT;
     SchedulerPrints = 0;

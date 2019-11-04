@@ -6,6 +6,8 @@ unsigned int InodeArray[32];
 
 void osFormatDisk(long DiskID, long *ReturnError);
 void osOpenDirectory(long DiskID, char *FileName, long *ReturnError);
-void osCreateFile(char *FilenName, long *ReturnError, INT32 FileOrDir);
+DISK_BLOCK* osCreateFile(char *FilenName, long *ReturnError, INT32 FileOrDir);
+void osOpenFile(char *FileName, long *Inode, long *ReturnError);
+void osWriteFile(long Inode, long Index, char *WriteBuffer, long *ReturnError);
 void InitializeInodes();
 void GetInode(unsigned char *NewInode);

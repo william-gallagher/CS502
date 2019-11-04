@@ -53,8 +53,6 @@ struct{
   unsigned char Modified[2048];
 } typedef DISK_CACHE;
 
-
-
 struct{
   unsigned short address[PGSIZE/2];
 } typedef DISK_INDEX;
@@ -67,9 +65,6 @@ struct{
   unsigned char flags[BIT_MAP_LENGTH];
   DISK_BLOCK *block[BIT_MAP_LENGTH];
 }typedef BIT_MAP;
-  
-
-
 
 //The struct that holds all the information about a process
 typedef struct{
@@ -85,7 +80,9 @@ typedef struct{
   void* queue_ptr;
   long current_disk;
   DISK_BLOCK *current_directory;
-  DISK_BLOCK *current_index;
+  DISK_BLOCK *current_index; ///Not used right now???
+  unsigned int open_file_inode;
+  DISK_BLOCK *open_file;
   DISK_CACHE *cache;
 } PROCESS_CONTROL_BLOCK;
 

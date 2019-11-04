@@ -75,6 +75,17 @@ void SetDiskLength(DISK_BLOCK *Sector0, INT16 DiskLength){
   Sector0->Byte[3] = (DiskLength>>8);
 }
 
+void SetFileSize(DISK_BLOCK *Header, INT16 FileSize){
+
+  Header->Byte[14] = (0x00FF & FileSize);
+  Header->Byte[15] = FileSize >> 8;
+}
+
+void GetFileSize(DISK_BLOCK *Header, INT16 *FileSize){
+
+  (*FileSize) = Header->Byte[14] + (Header->Byte[15] <<8);
+}
+
 void SetBitMapField(DISK_BLOCK *Sector0, unsigned char BitMap){
 
   Sector0->Byte[4] = BitMap;
@@ -258,6 +269,11 @@ INT32 CheckIndexSpot(DISK_BLOCK *Index, INT16 Position){
   }
 }  
 
+void GetSubIndex(DISK_BLOCK *Index, INT16 *SubIndexSector, INT16 Position){
+
+  (*SubIndexSector) = (Index->Byte[Position]<<8) + Index->Byte[Position+1];
+}  
+
 DISK_BLOCK* GetSubDirectoryHeader(DISK_CACHE *Cache, DISK_BLOCK *Index,
 			   INT16 Position){
 
@@ -265,8 +281,13 @@ DISK_BLOCK* GetSubDirectoryHeader(DISK_CACHE *Cache, DISK_BLOCK *Index,
   INT16 SubDirectorySector = (Index->Byte[Position]<<8) +
     Index->Byte[Position+1];
 
-  SubDirectoryHeader = &Cache->Block[SubDirectorySector];
-  return SubDirectoryHeader;
+  if(SubDirectorySector != 0){
+    SubDirectoryHeader = &Cache->Block[SubDirectorySector];
+    return SubDirectoryHeader;
+  }
+  else{
+    return NULL;
+  }
 }
 
 void SetIndexSpot(DISK_BLOCK *Index, INT16 Position, INT16 NewHeader){
@@ -551,17 +572,21 @@ void osOpenDirectory(long DiskID, char *FileName, long *ReturnError){
   DISK_BLOCK *Header = pcb->current_directory;
   DISK_BLOCK *SubDirectory;
   INT16 IndexAddress;
+
+  //Get the Disk Sector where the Header has its top most index
   GetHeaderIndexSector(Header, &IndexAddress);
   
   DISK_BLOCK *Index = &Cache->Block[IndexAddress];
   SubDirectory = FindDirectory(Cache, Index, FileName);
 
   pcb->current_directory = SubDirectory;
+  pcb->current_disk = DiskID;
   
 }
 
 
-void osCreateFile(char *FileName, long *ReturnError, INT32 FileOrDir){
+DISK_BLOCK* osCreateFile(char *FileName, long *ReturnError,
+			INT32 FileOrDir){
 
   if(FileOrDir == DIR)
     aprintf("Create a Directory with %s name\n", FileName);
@@ -649,10 +674,169 @@ void osCreateFile(char *FileName, long *ReturnError, INT32 FileOrDir){
   UnlockLocation(DISK_LOCK[DiskID]);
 
   dispatcher();
+
+  return NewHeader;
 }
 
 
+void osOpenFile(char *FileName, long *Inode, long *ReturnError){
 
+  aprintf("Opening File %s\n\n\n", FileName);
+
+  PROCESS_CONTROL_BLOCK *pcb = GetCurrentPCB();
+
+  DISK_CACHE *Cache = pcb->cache;
+
+  DISK_BLOCK *Header = pcb->current_directory;
+  DISK_BLOCK *FileToOpen;
+  INT16 IndexAddress;
+
+  //Get the Disk Sector where the Header has its top most index
+  GetHeaderIndexSector(Header, &IndexAddress);
+  
+  DISK_BLOCK *Index = &Cache->Block[IndexAddress];
+  FileToOpen = FindDirectory(Cache, Index, FileName);
+
+  //If we can't locate file in the current directory create it
+  if(FileToOpen == NULL){
+    aprintf("%s is not present\n", FileName);
+    FileToOpen = osCreateFile(FileName, ReturnError, FILE);
+  }
+
+  pcb->open_file = FileToOpen;
+  unsigned char OpenFileInode;
+  GetParentInode(FileToOpen, &OpenFileInode);
+  pcb->open_file_inode = OpenFileInode;
+
+  aprintf("Here is the inode of the file just opened %x \n", OpenFileInode);
+  (*Inode) = OpenFileInode;
+  (*ReturnError) = ERR_SUCCESS;
+   
+}
+
+void osWriteFile(long Inode, long Index, char *WriteBuffer,
+		 long *ReturnError){
+
+  //Assuming there is only one file open at time per process
+  PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
+
+  if(CurrentPCB->open_file_inode != Inode){
+    aprintf("\n\nERROR: File Not Open\n\n");
+    (*ReturnError) = ERR_BAD_PARAM;
+    return;
+  }
+
+  DISK_BLOCK *Header = CurrentPCB->open_file;
+  DISK_CACHE *Cache = CurrentPCB->cache;
+  INT16 ThirdLevelSector;
+
+  //Get the Disk Sector where the Header has its top most index
+  GetHeaderIndexSector(Header, &ThirdLevelSector);
+
+  aprintf("Third Level Sector %hx\n\n", ThirdLevelSector);
+  
+  //File Size in Bytes
+  INT16 FileSize;
+  GetFileSize(Header, &FileSize);
+
+  INT16 FileBlocks = FileSize/PGSIZE;
+    
+  DISK_BLOCK *ThirdLevelIndex = &Cache->Block[ThirdLevelSector]; 
+  //DISK_BLOCK *ParentIndex = NULL;
+
+  INT16 Position = (FileBlocks/64)*2;
+
+  INT16 SecondLevelSector;
+  DISK_BLOCK *SecondLevelIndex;
+  
+  GetSubIndex(ThirdLevelIndex, &SecondLevelSector, Position);
+
+  if(SecondLevelSector == 0){
+    aprintf("No Second Level index for here");
+    GetAvailableSector(Cache, &SecondLevelSector);
+    aprintf("Here is the new sub index %hx\n", SecondLevelSector);
+    SetIndexSpot(ThirdLevelIndex, Position, SecondLevelSector);
+    Cache->Modified[ThirdLevelSector] = 1;
+  }
+
+  SecondLevelIndex = &Cache->Block[SecondLevelSector];
+
+ 
+  //aprintf("Second Level Position is %hx\n", SecondLevelPosition);
+
+  for(int i=0; i<16; i++){
+    //aprintf("%x ", ThirdLevelIndex->Byte[i]);
+  }
+  //aprintf("\n\n");
+
+
+  Position = (FileBlocks - (FileBlocks/64)*64)*2;
+
+  INT16 FirstLevelSector;
+  DISK_BLOCK *FirstLevelIndex;
+  
+  GetSubIndex(SecondLevelIndex, &FirstLevelSector, Position);
+
+  if(FirstLevelSector == 0){
+    aprintf("No First Level index for here");
+    GetAvailableSector(Cache, &FirstLevelSector);
+    aprintf("Here is the new sub index %hx\n", FirstLevelSector);
+    SetIndexSpot(SecondLevelIndex, Position, FirstLevelSector);
+    Cache->Modified[SecondLevelSector] = 1;
+  }
+
+  FirstLevelIndex = &Cache->Block[FirstLevelSector];
+
+
+  //Now grab a disk sector and copy the Buffer into it
+  INT16 DataSector;
+  GetAvailableSector(Cache, &DataSector);
+  aprintf("Here is the data sector %hx\n", DataSector);
+  SetIndexSpot(FirstLevelIndex, Position, DataSector);
+  Cache->Modified[FirstLevelSector] = 1;
+
+  for(int i=0; i<PGSIZE; i++){
+    Cache->Block[DataSector].Byte[i] = WriteBuffer[i];
+  }
+  Cache->Modified[DataSector] = 1;
+  
+  //Update file size
+  FileSize = FileSize + PGSIZE;
+  SetFileLength(Header, FileSize);
+  
+
+  DQ_ELEMENT *dqe;
+  long CurrentContext = osGetCurrentContext();
+  long CurrentPID = GetCurrentPID();
+  long DiskID = CurrentPCB->current_disk;
+
+  INT32 Mod = 0;
+    
+  //Atomic Section
+  LockLocation(DISK_LOCK[DiskID]);
+  
+  for(INT16 i=0; i<0x0600; i++){
+    if(Cache->Modified[i] == 1){
+      aprintf("%x is modified\n", i);
+      dqe = CreateDiskQueueElement(DiskID, i, (long)(&Cache->Block[i]),
+				   CurrentContext, CurrentPID, CurrentPCB);
+      AddToDiskQueue(DiskID, dqe);
+
+      Cache->Modified[i] = 0;
+      Mod = 1;
+    }
+  }
+  if(Mod == 1){
+    StartDiskWrite(DiskID);
+    
+  }
+
+  UnlockLocation(DISK_LOCK[DiskID]);
+
+  if(Mod == 1)
+  dispatcher();
+
+}
 
 
 

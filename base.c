@@ -190,6 +190,9 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
   long *SenderPID;
 
   char *FileName;
+  long Inode;
+  long Index;
+  char *WriteBuffer;
     
     switch(call_type){
       
@@ -329,8 +332,21 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       
       break;
 
-      
+    case SYSNUM_OPEN_FILE:
 
+      FileName = (char *)SystemCallData->Argument[0];
+      long *InodePtr = (long *)SystemCallData->Argument[1];
+      ReturnError = (long *)SystemCallData->Argument[2];
+      osOpenFile(FileName, InodePtr, ReturnError);
+      break;      
+
+    case SYSNUM_WRITE_FILE:
+      Inode = (long)SystemCallData->Argument[0];
+      Index = (long)SystemCallData->Argument[1];
+      WriteBuffer = (char *)SystemCallData->Argument[2];
+      ReturnError = (long *)SystemCallData->Argument[3];
+      osWriteFile(Inode, Index, WriteBuffer, ReturnError);
+      break;
     }
 }           // End of SVC
 
