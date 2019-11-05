@@ -163,7 +163,8 @@ CALL(WasteTime());
 //We need a sleep so other thread can get LOCK
 //Otherwise the Interrupt Handler can't get in to add a process
 //from the Timer or Disk Queues.
-usleep(1);
+//usleep(1);
+ for(INT32 i=0; i<10000; i++);
 }
 long CurrentPID = GetCurrentPID();
 

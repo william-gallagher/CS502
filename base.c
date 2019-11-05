@@ -361,6 +361,11 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       ReturnError = (long *)SystemCallData->Argument[1];
       osCloseFile(Inode, ReturnError); 
       break;
+
+    case SYSNUM_DIR_CONTENTS:
+      ReturnError = (long *)SystemCallData->Argument[0];
+      osPrintCurrentDirContents(ReturnError);
+      break;
       
     }
 }           // End of SVC

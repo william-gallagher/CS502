@@ -44,7 +44,6 @@ struct{
 
 //define
 struct{
-
   unsigned char Byte[16];
 } typedef DISK_BLOCK;
 
@@ -53,18 +52,7 @@ struct{
   unsigned char Modified[2048];
 } typedef DISK_CACHE;
 
-struct{
-  unsigned short address[PGSIZE/2];
-} typedef DISK_INDEX;
-
-#define BIT_MAP_LENGTH 16
-
-struct{
-  long DiskID;
-  short StartAddress;
-  unsigned char flags[BIT_MAP_LENGTH];
-  DISK_BLOCK *block[BIT_MAP_LENGTH];
-}typedef BIT_MAP;
+DISK_CACHE *Cache;
 
 //The struct that holds all the information about a process
 typedef struct{

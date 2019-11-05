@@ -482,6 +482,7 @@ void SetPrintOptions(INT32 TestRunning) {
   case 22:
   case 23:
   case 24:
+  case 25:
     SVCPrints = MAX_INT;
     InterruptHandlerPrints = MAX_INT;
     SchedulerPrints = 0;
