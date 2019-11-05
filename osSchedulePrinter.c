@@ -317,6 +317,16 @@ void PrintSVC(long Arguments[], INT32 call_type ){
 
     aprintf("\n\tSVC handler: Write File\n\tWriting Logical Block %x to Inode %x\n\n", Arguments[1], Arguments[0]);    
     break;
+
+  case SYSNUM_READ_FILE:
+
+    aprintf("\n\tSVC handler: Read File\n\tReading Logical Block %x to Inode %x\n\n", Arguments[1], Arguments[0]);    
+    break;
+
+  case SYSNUM_CLOSE_FILE:
+
+    aprintf("\n\tSVC handler: Close File\n\tClosing File given by Inode %x\n\n", Arguments[0]);    
+    break;
     
   default:
       aprintf("\n\tSVC handler: Call Not Recognized.\n\n");
@@ -471,6 +481,7 @@ void SetPrintOptions(INT32 TestRunning) {
   case 21:
   case 22:
   case 23:
+  case 24:
     SVCPrints = MAX_INT;
     InterruptHandlerPrints = MAX_INT;
     SchedulerPrints = 0;

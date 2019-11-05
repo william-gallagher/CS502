@@ -732,67 +732,57 @@ void osWriteFile(long Inode, long Index, char *WriteBuffer,
 
   //Get the Disk Sector where the Header has its top most index
   GetHeaderIndexSector(Header, &ThirdLevelSector);
-
-  aprintf("Third Level Sector %hx\n\n", ThirdLevelSector);
   
   //File Size in Bytes
   INT16 FileSize;
   GetFileSize(Header, &FileSize);
 
   INT16 FileBlocks = FileSize/PGSIZE;
+
+  //Calculate the SubIndices
+  INT16 Position1 = FileBlocks%8;
+  FileBlocks = FileBlocks/8;
+  INT16 Position2 = FileBlocks%8;
+  FileBlocks = FileBlocks/8;
+  INT16 Position3 = FileBlocks%8;
+
     
   DISK_BLOCK *ThirdLevelIndex = &Cache->Block[ThirdLevelSector]; 
-  //DISK_BLOCK *ParentIndex = NULL;
-
-  INT16 Position = (FileBlocks/64)*2;
 
   INT16 SecondLevelSector;
   DISK_BLOCK *SecondLevelIndex;
   
-  GetSubIndex(ThirdLevelIndex, &SecondLevelSector, Position);
+  GetSubIndex(ThirdLevelIndex, &SecondLevelSector, Position3*2);
 
   if(SecondLevelSector == 0){
-    aprintf("No Second Level index for here");
+
     GetAvailableSector(Cache, &SecondLevelSector);
-    aprintf("Here is the new sub index %hx\n", SecondLevelSector);
-    SetIndexSpot(ThirdLevelIndex, Position, SecondLevelSector);
+    SetIndexSpot(ThirdLevelIndex, Position3*2, SecondLevelSector);
     Cache->Modified[ThirdLevelSector] = 1;
   }
 
   SecondLevelIndex = &Cache->Block[SecondLevelSector];
 
- 
-  //aprintf("Second Level Position is %hx\n", SecondLevelPosition);
-
-  for(int i=0; i<16; i++){
-    //aprintf("%x ", ThirdLevelIndex->Byte[i]);
-  }
-  //aprintf("\n\n");
-
-
-  Position = (FileBlocks - (FileBlocks/64)*64)*2;
-
   INT16 FirstLevelSector;
   DISK_BLOCK *FirstLevelIndex;
   
-  GetSubIndex(SecondLevelIndex, &FirstLevelSector, Position);
+  GetSubIndex(SecondLevelIndex, &FirstLevelSector, Position2*2);
 
   if(FirstLevelSector == 0){
     aprintf("No First Level index for here");
     GetAvailableSector(Cache, &FirstLevelSector);
     aprintf("Here is the new sub index %hx\n", FirstLevelSector);
-    SetIndexSpot(SecondLevelIndex, Position, FirstLevelSector);
+    SetIndexSpot(SecondLevelIndex, Position2*2, FirstLevelSector);
     Cache->Modified[SecondLevelSector] = 1;
   }
 
   FirstLevelIndex = &Cache->Block[FirstLevelSector];
 
-
+  
   //Now grab a disk sector and copy the Buffer into it
   INT16 DataSector;
   GetAvailableSector(Cache, &DataSector);
-  aprintf("Here is the data sector %hx\n", DataSector);
-  SetIndexSpot(FirstLevelIndex, Position, DataSector);
+  SetIndexSpot(FirstLevelIndex, Position1*2, DataSector);
   Cache->Modified[FirstLevelSector] = 1;
 
   for(int i=0; i<PGSIZE; i++){
@@ -833,11 +823,73 @@ void osWriteFile(long Inode, long Index, char *WriteBuffer,
 
   UnlockLocation(DISK_LOCK[DiskID]);
 
-  if(Mod == 1)
-  dispatcher();
-
+  if(Mod == 1){
+    dispatcher();
+  }
 }
 
+void osCloseFile(long Inode, long *ReturnError){
+
+  PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
+
+  if(CurrentPCB->open_file_inode == Inode){
+    CurrentPCB->open_file_inode = -1;
+    CurrentPCB->open_file = NULL;
+    (*ReturnError) = ERR_SUCCESS;
+    return;
+  }
+  aprintf("\n\nERROR: Inode does not correspond to Open File\n\n");
+  (*ReturnError) = ERR_BAD_PARAM;
+}
+
+void osReadFile(long Inode, long Index, char *ReadBuffer, long *ReturnError){
+
+  //Assuming there is only one file open at time per process
+  PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
+
+  if(CurrentPCB->open_file_inode != Inode){
+    aprintf("\n\nERROR: File Not Open\n\n");
+    (*ReturnError) = ERR_BAD_PARAM;
+    return;
+  }
+
+  DISK_BLOCK *Header = CurrentPCB->open_file;
+  DISK_CACHE *Cache = CurrentPCB->cache;
+  long DiskID = CurrentPCB->current_disk;
+  INT16 ThirdLevelSector;
+
+  //Get the Disk Sector where the Header has its top most index
+  GetHeaderIndexSector(Header, &ThirdLevelSector);
+
+  //Calculate the SubIndices
+  INT16 Position1 = Index%8;
+  Index = Index/8;
+  INT16 Position2 = Index%8;
+  Index = Index/8;
+  INT16 Position3 = Index%8;
+
+  //aprintf("%hx %hx %hx\n", Position1, Position2, Position3);
+  DISK_BLOCK *ThirdLevelIndex = &Cache->Block[ThirdLevelSector]; 
+
+  INT16 SecondLevelSector;
+  DISK_BLOCK *SecondLevelIndex;
+  
+  GetSubIndex(ThirdLevelIndex, &SecondLevelSector, Position3*2);
+  SecondLevelIndex = &Cache->Block[SecondLevelSector];
+
+  INT16 FirstLevelSector;
+  DISK_BLOCK *FirstLevelIndex;
+  
+  GetSubIndex(SecondLevelIndex, &FirstLevelSector, Position2*2);
+  FirstLevelIndex = &Cache->Block[FirstLevelSector];
+
+  //Now grab the data sector.
+  INT16 DataSector;
+  GetSubIndex(FirstLevelIndex, &DataSector, Position1*2);
+  
+  osDiskReadRequest(DiskID, (long)DataSector, (long)ReadBuffer);
+  
+}
 
 
 /*
@@ -854,59 +906,4 @@ void AddToDiskQueue(long DiskID, DQ_ELEMENT *dqe);
   long PID;
   void* PCB;
   }DQ_ELEMENT;
-*/
-
-/*
-
-//Disk Sector has already been determined to be available.
-INT32 GetSpot1(long DiskID, DISK_INDEX *Index, short DiskSector, short CurrentDiskSector){
- 
-  aprintf("At level 1 of Dir\n");
-    
-
-  for(INT32 i=0; i<PGSIZE/2; i++){
-    if(Index->address[i] == 0){
-      aprintf("The %x slot is available\nCode to write the header to Disk Sector %x should be inserted here\n", i , DiskSector);
-
-      Index->address[i] = DiskSector;
-      //update file hierarchy on disk
-
-      long CurrentPID = GetCurrentPID();
-      long CurrentContext = osGetCurrentContext();
-      void* CurrentPCB = GetCurrentPCB();
-      DQ_ELEMENT *dqe;
-      dqe = CreateDiskQueueElement(DiskID, CurrentDiskSector, (long)Index,
-				   CurrentContext, CurrentPID, CurrentPCB);
-      AddToDiskQueue(DiskID, dqe);
-      return TRUE;
-      
-    }
-  }
-
-  return FALSE;
-
-}
-
-//Disk Sector has already been determined to be available.
-INT32 GetSpot2(long DiskID, DISK_INDEX *Index, short DiskSector, short CurrentDiskSector){
- 
-  aprintf("At level 2 of Dir\n");
-    
-
-  for(INT32 i=0; i<PGSIZE/2; i++){
-    if(Index->address[i] == 0){
-      aprintf("The %x slot is available\nWe need to create a level 1 index\n", i , DiskSector);
-
-      Index->address[i] = DiskSector;
-      //update file hierarchy on disk
-
-     
-      return TRUE;
-      
-    }
-  }
-
-  return FALSE;
-
-}
 */

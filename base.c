@@ -347,6 +347,21 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       ReturnError = (long *)SystemCallData->Argument[3];
       osWriteFile(Inode, Index, WriteBuffer, ReturnError);
       break;
+
+    case SYSNUM_READ_FILE:
+      Inode = (long)SystemCallData->Argument[0];
+      Index = (long)SystemCallData->Argument[1];
+      WriteBuffer = (char *)SystemCallData->Argument[2];
+      ReturnError = (long *)SystemCallData->Argument[3];
+      osReadFile(Inode, Index, WriteBuffer, ReturnError);
+      break;
+
+    case SYSNUM_CLOSE_FILE:
+      Inode = (long)SystemCallData->Argument[0];
+      ReturnError = (long *)SystemCallData->Argument[1];
+      osCloseFile(Inode, ReturnError); 
+      break;
+      
     }
 }           // End of SVC
 
