@@ -418,6 +418,31 @@ void SetTestNumber(char TestName[]){
   if(strcmp("test29", TestName) == 0){
     TestRunning = 29;
   }
+  if(strcmp("test41", TestName) == 0){
+    TestRunning = 41;
+  }
+  if(strcmp("test42", TestName) == 0){
+    TestRunning = 42;
+  }
+  if(strcmp("test43", TestName) == 0){
+    TestRunning = 43;
+  }
+  if(strcmp("test44", TestName) == 0){
+    TestRunning = 44;
+  }
+    if(strcmp("test45", TestName) == 0){
+    TestRunning = 45;
+  }
+  if(strcmp("test46", TestName) == 0){
+    TestRunning = 46;
+  }
+  if(strcmp("test47", TestName) == 0){
+    TestRunning = 47;
+  }
+  if(strcmp("test48", TestName) == 0){
+    TestRunning = 48;
+  }
+  
 }
 
 /*
@@ -573,6 +598,30 @@ long GetTestName(char* test_name){
   }
   if(strcmp("test29", test_name) == 0){
     return (long)(test29);
+  }
+  if(strcmp("test41", test_name) == 0){
+    return (long)(test41);
+  }
+  if(strcmp("test42", test_name) == 0){
+    return (long)(test42);
+  }
+  if(strcmp("test43", test_name) == 0){
+    return (long)(test43);
+  }
+  if(strcmp("test44", test_name) == 0){
+    return (long)(test44);
+  }
+  if(strcmp("test45", test_name) == 0){
+    return (long)(test45);
+  }
+  if(strcmp("test46", test_name) == 0){
+    return (long)(test46);
+  }
+  if(strcmp("test47", test_name) == 0){
+    return (long)(test47);
+  }
+  if(strcmp("test48", test_name) == 0){
+    return (long)(test48);
   }
    
   return 0;

@@ -250,8 +250,6 @@ void GetRootLocation(DISK_BLOCK *Sector0, INT16 *RootAddress){
 
   (*RootAddress) = Sector0->Byte[8];
   (*RootAddress) = (Sector0->Byte[9] << 8) + (*RootAddress);
-
-  aprintf("Here is the root address %x\n", *RootAddress);
 }
 
 void GetHeaderIndexSector(DISK_BLOCK *Header, INT16 *IndexAddress){
@@ -583,7 +581,7 @@ void osOpenDirectory(long DiskID, char *FileName, long *ReturnError){
   SubDirectory = FindDirectory(Cache, Index, FileName);
 
   pcb->current_directory = SubDirectory;
-  pcb->current_disk = DiskID;
+
   
 }
 
@@ -655,6 +653,7 @@ DISK_BLOCK* osCreateFile(char *FileName, long *ReturnError,
   Cache->Modified[NewHeaderSector] = 1;
 
 
+  aprintf("Here is the number for Disk Lock %x\n\n", DISK_LOCK[DiskID]);
     //Atomic Section
   LockLocation(DISK_LOCK[DiskID]);
   
@@ -845,7 +844,6 @@ void osReadFile(long Inode, long Index, char *ReadBuffer, long *ReturnError){
   }
 
   DISK_BLOCK *Header = CurrentPCB->open_file;
-  //DISK_CACHE *Cache = CurrentPCB->cache;
   long DiskID = CurrentPCB->current_disk;
   INT16 ThirdLevelSector;
 

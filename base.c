@@ -41,6 +41,7 @@
 #include "osGlobals.h"
 #include "osSchedulePrinter.h"
 #include "diskManagement.h"
+#include "memoryManagement.h"
 
 
 
@@ -139,6 +140,17 @@ void FaultHandler(void) {
   if (remove_this_from_your_fault_code && (how_many_fault_entries < 10)) {
     aprintf("FaultHandler: Found device ID %d with status %d\n",
 	    (int) mmio.Field1, (int) mmio.Field2);
+
+    //Let's just set to page 1 for now
+    //get the current page table
+    PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
+
+    INT16 *PageTable = (INT16 *)CurrentPCB->page_table;
+
+    GetAvailablePhysicalFrame(&PageTable[mmio.Field2]);
+    SetValidBit(&PageTable[mmio.Field2]);
+
+    
   }
     
 } // End of FaultHandler
@@ -408,10 +420,15 @@ void osInit(int argc, char *argv[]) {
             mmio.Field3 = (long) 0;
             mmio.Field4 = (long) 0;
             MEM_WRITE(Z502Processor, &mmio);   // Set the number of processors
+
+	    //set flag in OS to indicate multiprocessor mode
+	    M = MULTI;
         }
     } else {
         aprintf("Simulation is running as a UniProcessor\n");
         aprintf("Add an 'M' to the command line to invoke multiprocessor operation.\n\n");
+
+	M = UNI;
     }
 
     //  Some students have complained that their code is unable to allocate
@@ -437,6 +454,9 @@ void osInit(int argc, char *argv[]) {
     
     //create the structures for the OS
     InitializeProcessInfo();
+
+    //Create the Frame Manager
+    InitializeFrameManager();
 
     //Create the Queues and Buffers
     CreateTimerQueue();

@@ -47,7 +47,7 @@ INT32 GetAvailablePCB(){
   This function does the work of finding the PCB for the new process. It
   fills the fields of the PCB and returns the PID of the new process.
 */
-long FillPCB(char* Name, long Context, INT32 Parent, long Priority){
+long FillPCB(char* Name, long Context, INT32 Parent, long Priority, void* PageTable){
 
 
     //First get an available PCB.
@@ -64,6 +64,7 @@ long FillPCB(char* Name, long Context, INT32 Parent, long Priority){
     new_pcb->in_use = IN_USE;
     new_pcb->parent = Parent;
     new_pcb->state = RUNNING;
+    new_pcb->page_table = PageTable;
   
     return new_pcb->idnum;
 }
@@ -460,7 +461,7 @@ void osCreateProcess(char Name[], long StartAddress, long Priority, long *PID, l
     context = GetNewContext(StartAddress, PageTable);
 
     long CurrentPID = GetCurrentPID();
-    (*PID) = FillPCB(Name, context, CurrentPID, Priority);
+    (*PID) = FillPCB(Name, context, CurrentPID, Priority, PageTable);
 
     osPrintState("Create", *PID, CurrentPID);
   

@@ -72,6 +72,7 @@ typedef struct{
   unsigned int open_file_inode;
   DISK_BLOCK *open_file;
   DISK_CACHE *cache;
+  void* page_table;
 } PROCESS_CONTROL_BLOCK;
 
 //The array that holds all the PCBs
@@ -149,9 +150,13 @@ INT32 DISK_LOCK[MAX_NUMBER_OF_DISKS];
 //using DISK_LOCK_BASE + 1 !!!
 
 
+//Define multiprocessor or uniprocessor
+#define MULTI 1
+#define UNI 0
 
+//Multiprocessor Flag
+INT32 M;
 
-
-
+unsigned int FrameManager[NUMBER_PHYSICAL_PAGES];
 
 #endif //OS_GLOBAL_H
