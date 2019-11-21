@@ -14,3 +14,4 @@ void osCloseFile(long Inode, long *ReturnError);
 void osPrintCurrentDirContents(long *ReturnError);
 void InitializeInodes();
 void GetInode(unsigned char *NewInode);
+DISK_CACHE* CreateDiskCache();

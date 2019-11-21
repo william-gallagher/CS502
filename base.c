@@ -137,18 +137,55 @@ void FaultHandler(void) {
   // an indication of what's happening but then stops printing for long tests
   // thus limiting the output.
   how_many_fault_entries++; 
-  if (remove_this_from_your_fault_code && (how_many_fault_entries < 10)) {
+  if (remove_this_from_your_fault_code && (how_many_fault_entries < 100000)) {
     aprintf("FaultHandler: Found device ID %d with status %d\n",
 	    (int) mmio.Field1, (int) mmio.Field2);
 
-    //Let's just set to page 1 for now
+
     //get the current page table
     PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
+    long PID = CurrentPCB->idnum;
 
     INT16 *PageTable = (INT16 *)CurrentPCB->page_table;
+    INT16 *ShadowPageTable = (INT16 *)CurrentPCB->shadow_page_table;
+    INT16 Index = (INT16) mmio.Field2;
 
-    GetAvailablePhysicalFrame(&PageTable[mmio.Field2]);
-    SetValidBit(&PageTable[mmio.Field2]);
+    //If Valid bit is set and we are here then the user program has
+    //asked for an address that is not on a mod 4 boundary.
+    //Just terminate the program.
+    if(CheckValidBit(PageTable[Index]) == TRUE){
+
+      aprintf("\n\nERROR: Bad Address. Terminate Program\n\n");
+      long ReturnError;
+      osTerminateProcess(-1, &ReturnError);  
+    }
+
+    //There are two possibilities. The valid bit is not set because the
+    //logical page has never been used or because the page is backed by data
+    //in the swap space.
+
+    INT32 OnDisk = CheckOnDisk(Index, ShadowPageTable);
+
+       
+    GetPhysicalFrame(&PageTable[Index], CurrentPCB, Index);
+    SetValidBit(&PageTable[Index]);
+
+    if(OnDisk == TRUE){
+
+      //get the data from "Disk"
+      //need to use the shadow page table
+
+      INT16 CacheLine = ShadowPageTable[Index] & 0x1FFF;
+
+      char DataBuffer[16];
+      for(int i=0; i<16; i++){
+	DataBuffer[i] = CurrentPCB->cache->Block[CacheLine].Byte[i];
+      }
+      INT16 Frame = (PageTable[Index] & 0x0FFF);
+      Z502WritePhysicalMemory(Frame, DataBuffer);
+
+      ShadowPageTable[Index] = 0;
+    }
 
     
   }

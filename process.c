@@ -47,7 +47,7 @@ INT32 GetAvailablePCB(){
   This function does the work of finding the PCB for the new process. It
   fills the fields of the PCB and returns the PID of the new process.
 */
-long FillPCB(char* Name, long Context, INT32 Parent, long Priority, void* PageTable){
+long FillPCB(char* Name, long Context, INT32 Parent, long Priority, void* PageTable, void *ShadowPageTable){
 
 
     //First get an available PCB.
@@ -65,6 +65,7 @@ long FillPCB(char* Name, long Context, INT32 Parent, long Priority, void* PageTa
     new_pcb->parent = Parent;
     new_pcb->state = RUNNING;
     new_pcb->page_table = PageTable;
+    new_pcb->shadow_page_table = ShadowPageTable;
   
     return new_pcb->idnum;
 }
@@ -437,6 +438,10 @@ void osCreateProcess(char Name[], long StartAddress, long Priority, long *PID, l
     // the second half of the project.  
     void *PageTable = (void *) calloc(2, NUMBER_VIRTUAL_PAGES);
 
+    //Also create a shadow page table. This maintains where the pages
+    //are stored in the Disk Swap Space if necessary
+    void *ShadowPageTable = (void *) calloc(2, NUMBER_VIRTUAL_PAGES);
+
     if(CheckProcessCount() == FALSE){
 	//aprintf("\n\nError: Reached Max number of Processes\n\n");
 	(*ReturnError) = ERR_BAD_PARAM;  //set error message
@@ -461,7 +466,8 @@ void osCreateProcess(char Name[], long StartAddress, long Priority, long *PID, l
     context = GetNewContext(StartAddress, PageTable);
 
     long CurrentPID = GetCurrentPID();
-    (*PID) = FillPCB(Name, context, CurrentPID, Priority, PageTable);
+    (*PID) = FillPCB(Name, context, CurrentPID, Priority, PageTable,
+		     ShadowPageTable);
 
     osPrintState("Create", *PID, CurrentPID);
   
