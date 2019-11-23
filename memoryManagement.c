@@ -13,6 +13,7 @@
 #include "osGlobals.h"
 #include "memoryManagement.h"
 #include "diskManagement.h"
+#include "diskQueue.h"
 //#include "osSchedulePrinter.h"
 
 void InitializeFrameManager(){
@@ -42,7 +43,8 @@ at some previous point. This would be indicated by bit 15 being set t0
 INT32 CheckPreviouslyOnDisk(INT16 ShadowTableIndex,
 			    INT16 *ShadowPageTable){
 
-    if((ShadowPageTable[ShadowTableIndex] & 0x4000) == 0){
+
+  if((ShadowPageTable[ShadowTableIndex] & 0x4000) == 0){
     return FALSE;
   }
   return TRUE;
@@ -52,63 +54,76 @@ INT32 CheckPreviouslyOnDisk(INT16 ShadowTableIndex,
 /*
 All the Frames are full and we need to put the contents of one onto disk
 */
-INT16 FreeUsedFrame(PROCESS_CONTROL_BLOCK *pcb){
+INT16 FreeUsedFrame(PROCESS_CONTROL_BLOCK *pcb1){
 
+  //get a random frame. Eventually need a better way to do this.
+  INT16 FrameToRemove = NextFrame%64;
+  NextFrame++;
+
+  aprintf("Removing frame %d\n", FrameToRemove);
+  
+  INT32 FrameContents = FrameManager[FrameToRemove];
+
+  unsigned char FramePID = (FrameContents & 0x00FF0000) >> 16;
+
+  aprintf("Removing a frame that belongs to PID %d\n", FramePID);
+
+  PROCESS_CONTROL_BLOCK* pcb = GetPCB((long) FramePID);
+
+  
   INT16 *ShadowPageTable = pcb->shadow_page_table;
   INT16 *PageTable = pcb->page_table;
 
-  //get a random frame. Eventually need a better way to do this.
-  INT16 FrameToRemove = random()%64;
+  INT16 PageNumber = FrameContents & 0x00000FFFF;
 
-  INT32 FrameContents = FrameManager[FrameToRemove];
-
-  unsigned int FramePID = (FrameContents & 0x00FF0000) >> 16;
-
-  INT16 PageNumber = FrameContents & 0x0000FFFF;
+  aprintf("PID %d is removing a frame in PID %d PCB\n", pcb1->idnum, pcb->idnum);
 
   //Clear the valid bit
   PageTable[PageNumber] = 0;
-  
+  /*  
   if(pcb->cache == NULL){
+
+    //chose the Disk that will have the swap area
+    pcb->current_disk = pcb->idnum % MAX_NUMBER_OF_DISKS;
     //pcb->cache = CreateDiskCache();
     pcb->cache = malloc(10000000);
-    pcb->next_swap_location = 0x0000;
-  }
+    pcb->next_swap_location = 0x0600;
+
+    //long ReturnError;
+    //osFormatDisk(pcb1->current_disk, &ReturnError);
+    }*/
   INT16 CacheLine;
   //Check to see if the logical page has been in the swap space before.
   //If yes then put it back where it was.
   if(CheckPreviouslyOnDisk(PageNumber, ShadowPageTable) == FALSE){
- 
-    CacheLine = pcb->next_swap_location;
+
+    
+    CacheLine = NextSwapLocation;
 
     //fill the shadow page table
     ShadowPageTable[PageNumber] = 0x4000; //set the prev in use bit 
     // ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + ((FramePID & 0x0F)<<11);
     ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + CacheLine;
-
-    //  aprintf("here is whats store in shadow pg %x\n", ShadowPageTable[PageNumber]);
-    //  aprintf("new swap location is %x\n", pcb->next_swap_location);
-    pcb->next_swap_location++;
+    NextSwapLocation++;
 
   }
   else{
+
     CacheLine = ShadowPageTable[PageNumber] & 0x0FFF;
   }
 
   ShadowPageTable[PageNumber] |= 0x8000;  //set in use bit
-    
+
+
   //have to get data from physical memory and put into cache
   char DataBuffer[16];
   Z502ReadPhysicalMemory(FrameToRemove, DataBuffer);
   
-  for(int i=0; i<16; i++){
-    // aprintf("%x ", DataBuffer[i]);
-  }
 
-  //copy to cache
-  for(int i=0; i<16; i++){
-    pcb->cache->Block[CacheLine].Byte[i] = DataBuffer[i];
-  }
+  //Really should check modified bit before writing to disk
+  osDiskWriteRequest(SWAP_DISK, CacheLine, (long)DataBuffer);
+
+  
   return FrameToRemove;
 }
 
@@ -138,7 +153,7 @@ void GetPhysicalFrame(INT16 *Frame, PROCESS_CONTROL_BLOCK *pcb, INT16 PageIndex)
   }
 
   FrameManager[FrameIndex] = 0x01000000; //signify in use
-  FrameManager[FrameIndex] = FrameManager[FrameIndex] + (PID & 0x00ff0000);
+  FrameManager[FrameIndex] = FrameManager[FrameIndex] + ((PID<<16) & 0x00ff0000);
   FrameManager[FrameIndex] = FrameManager[FrameIndex] + PageIndex;
 
   (*Frame) = FrameIndex;

@@ -462,16 +462,17 @@ DQ_ELEMENT* CreateDiskQueueElement(long DiskID, long Sector,
 void osFormatDisk(long DiskID, long *ReturnError){
 
   if(DiskID < 0 || DiskID >= MAX_NUMBER_OF_DISKS){
-    aprintf("\n\nDisk Error is not in the proper range\n\n");
+    aprintf("\n\nERROR: Disk is not in the proper range\n\n");
   }
-  aprintf("\n\nHere in Format Disk\n\n");
 
   //get the Current Process information
   long CurrentPID = GetCurrentPID();
   long CurrentContext = osGetCurrentContext();
   PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
 
-  Cache = CreateDiskCache();
+  if(Cache == NULL){
+    Cache = CreateDiskCache();
+  }
   //CurrentPCB->cache = Cache;
 
   DISK_BLOCK *Sector0 = &Cache->Block[0];
@@ -571,14 +572,23 @@ void osOpenDirectory(long DiskID, char *FileName, long *ReturnError){
  
 
   DISK_BLOCK *Header = pcb->current_directory;
+  if(Header == NULL){
+    aprintf("osOpenDir has null ptr!!\n");
+  }
   DISK_BLOCK *SubDirectory;
   INT16 IndexAddress;
 
   //Get the Disk Sector where the Header has its top most index
   GetHeaderIndexSector(Header, &IndexAddress);
+
+  aprintf("Here is the indes of indexAddress %d\n", IndexAddress);
   
   DISK_BLOCK *Index = &Cache->Block[IndexAddress];
   SubDirectory = FindDirectory(Cache, Index, FileName);
+
+  if(SubDirectory == NULL){
+    aprintf("Big Problems. SubDir is NULL\n");
+  }
 
   pcb->current_directory = SubDirectory;
 
@@ -652,8 +662,6 @@ DISK_BLOCK* osCreateFile(char *FileName, long *ReturnError,
 
   Cache->Modified[NewHeaderSector] = 1;
 
-
-  aprintf("Here is the number for Disk Lock %x\n\n", DISK_LOCK[DiskID]);
     //Atomic Section
   LockLocation(DISK_LOCK[DiskID]);
   
@@ -688,6 +696,10 @@ void osOpenFile(char *FileName, long *Inode, long *ReturnError){
   //DISK_CACHE *Cache = pcb->cache;
 
   DISK_BLOCK *Header = pcb->current_directory;
+
+  if(Header == NULL){
+    aprintf("Null File Big Prob\n\n");
+  }
   DISK_BLOCK *FileToOpen;
   INT16 IndexAddress;
 

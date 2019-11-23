@@ -164,4 +164,8 @@ INT32 M;
 
 INT32 FrameManager[NUMBER_PHYSICAL_PAGES];
 
+
+//temp thing
+INT32 NextFrame;
+
 #endif //OS_GLOBAL_H

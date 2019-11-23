@@ -192,6 +192,54 @@ void osPrintState(char* Action, long TargetPID, long CurrentPID){
   SchedulerPrints--;
 }
 
+/*
+This function prints out the memory state by using the Memory Printer.
+*/
+void osPrintMemoryState(){
+
+  //Don't use Memory Printer if we have reached the print limit
+  if(MemoryPrints <= 0) return;
+  
+  MP_INPUT_DATA MPInput;
+  INT32 FrameData;
+  MP_FRAME_DATA *Data;
+  INT16 PID;
+  INT16 LogicalPage;
+  INT16 State;
+  
+  for(INT32 i=0; i<NUMBER_PHYSICAL_PAGES; i++){
+    FrameData = FrameManager[i];
+    Data = &MPInput.frames[i];
+
+    //test to see if frame is in use.
+    if((FrameData & 0xFF000000) == 0){
+      Data->InUse = FALSE;
+    }
+    else{
+      Data->InUse = TRUE;
+    }
+
+    //Get PID of process using the Frame
+    PID = (FrameData>>16) & 0x00FF;
+    Data->Pid = PID;
+
+    //Get Logical Page
+    LogicalPage = (FrameData & 0x0000FFFF);
+    Data->LogicalPage = LogicalPage;
+
+    //Get the state of the Page.
+    //Eventually have to go into the page table. For now just set valide
+    State = FRAME_VALID;
+    Data->State = State;
+    
+  }
+
+  MPPrintLine(&MPInput);
+  MemoryPrints--;
+}
+
+
+
 //Enable pretty output by printing strings corresponding to error status
 char *error_status[] = {"ERR_SUCCESS", "ERR_BAD_PARAM", "ERR_NO_PREVIOUS_WRITE", "ERR_ILLEGAL_ADDRESS", "ERR_DISK_IN_USE", "ERR_BAD_DEVICE_ID", "ERR_NO_DEVICE_FOUND", "DEVICE_IN_USE", "DEVICE_FREE"}; 
 
@@ -458,6 +506,7 @@ void SetPrintOptions(INT32 TestRunning) {
   case 2:
     SVCPrints = MAX_INT;
     InterruptHandlerPrints = MAX_INT;
+    FaultHandlerPrints = 0;
     SchedulerPrints = 0;
     MemoryPrints = 0;
     break;
@@ -465,6 +514,7 @@ void SetPrintOptions(INT32 TestRunning) {
   case 4:
     SVCPrints = 10;
     InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 0;
     SchedulerPrints = MAX_INT;
     MemoryPrints = 0;
     break;
@@ -472,12 +522,14 @@ void SetPrintOptions(INT32 TestRunning) {
   case 6:
     SVCPrints = 20;
     InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 0;
     SchedulerPrints = MAX_INT;
     MemoryPrints = 0;
     break;
   case 7:
     SVCPrints = 30;
     InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 0;
     SchedulerPrints = MAX_INT;
     MemoryPrints = 0;
     break;
@@ -485,12 +537,14 @@ void SetPrintOptions(INT32 TestRunning) {
   case 9:
     SVCPrints = 20;
     InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 0;
     SchedulerPrints = MAX_INT;
     MemoryPrints = 0;
     break;
   case 10:
     SVCPrints = 10;
     InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 0;
     SchedulerPrints = MAX_INT;
     MemoryPrints = 0;
     break;
@@ -505,14 +559,43 @@ void SetPrintOptions(INT32 TestRunning) {
     break;
   case 21:
   case 22:
-  case 23:
-  case 24:
-  case 25:
     SVCPrints = MAX_INT;
     InterruptHandlerPrints = MAX_INT;
+    FaultHandlerPrints = MAX_INT;
     SchedulerPrints = 0;
     MemoryPrints = 0;
     break;
+  case 23:
+    SVCPrints = 10;
+    InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 10;
+    SchedulerPrints = MAX_INT;
+    MemoryPrints = 0;
+  case 24:
+  case 25:
+  case 26:
+  case 27:
+  case 28:
+    SVCPrints = 10;
+    InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 10;
+    SchedulerPrints = 100;
+    MemoryPrints = 0;
+    break;
+  case 41:
+  case 42:
+  case 43:
+  case 44:
+  case 45:
+  case 46:
+  case 47:
+  case 48:
+    SVCPrints = MAX_INT;
+    InterruptHandlerPrints = MAX_INT;
+    FaultHandlerPrints = MAX_INT;
+    SchedulerPrints = MAX_INT;
+    MemoryPrints = 5;
+    break;    
   default:
     aprintf("\n\nTest Number Not Recognized\n\n");    
   }

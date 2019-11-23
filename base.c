@@ -138,9 +138,11 @@ void FaultHandler(void) {
   // thus limiting the output.
   how_many_fault_entries++; 
   if (remove_this_from_your_fault_code && (how_many_fault_entries < 100000)) {
+    for(int i=0; i<100000; i++);
     aprintf("FaultHandler: Found device ID %d with status %d\n",
 	    (int) mmio.Field1, (int) mmio.Field2);
 
+    osPrintMemoryState();
 
     //get the current page table
     PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
@@ -172,19 +174,18 @@ void FaultHandler(void) {
 
     if(OnDisk == TRUE){
 
-      //get the data from "Disk"
-      //need to use the shadow page table
-
-      INT16 CacheLine = ShadowPageTable[Index] & 0x1FFF;
+      INT16 CacheLine = ShadowPageTable[Index] & 0x0FFF;
 
       char DataBuffer[16];
-      for(int i=0; i<16; i++){
-	DataBuffer[i] = CurrentPCB->cache->Block[CacheLine].Byte[i];
-      }
+
+      aprintf("In base.c. PID %d is reading for disk %d\n", CurrentPCB->idnum, SWAP_DISK);
+     
+      osDiskReadRequest(SWAP_DISK, CacheLine, (long)DataBuffer);
+      
       INT16 Frame = (PageTable[Index] & 0x0FFF);
       Z502WritePhysicalMemory(Frame, DataBuffer);
 
-      ShadowPageTable[Index] = 0;
+      ShadowPageTable[Index] &= 0x7FFF;
     }
 
     
@@ -499,6 +500,10 @@ void osInit(int argc, char *argv[]) {
     CreateTimerQueue();
     CreateReadyQueue();
     CreateMessageBuffer();
+
+    NextFrame = 0;
+    NextSwapLocation = 0x600;
+    Cache = NULL;
 
     for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
       CreateDiskQueue(i);

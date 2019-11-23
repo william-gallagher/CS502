@@ -2174,7 +2174,7 @@ void test44(void) {
 	for (Index = 0; Index < LOOP_COUNT; Index++) // Bugfix Rel 4.03  12/1/2013
 		mtr->page_touched[Index] = 0;
 	for (Loops = 0; Loops < LOOP_COUNT; Loops++) {
-		aprintf("Iteration %d\n", Loops);
+
 		// Get a random page number
 		GetSkewedRandomNumber(&PageNumber, OurProcessID, LOGICAL_PAGES_TO_TOUCH);
 		MemoryAddress = PGSIZE * PageNumber; // Convert page to address
@@ -2215,7 +2215,6 @@ void test44(void) {
 			aprintf("ERROR HAS OCCURRED: READ NOT SAME AS WRITE.\n");
 			aprintf("PID= %ld  address= %4ld   written= %4d   read= %4d\n",
 					OurProcessID, MemoryAddress, DataWritten, DataRead);
-			aprintf("Error occurs on readback %d\n", Loops);
 		}
 	}   // End of for Loops
 

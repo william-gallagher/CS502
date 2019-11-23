@@ -134,7 +134,7 @@ void osDiskReadRequest(long DiskID, long DiskSector, long DiskAddress){
   CheckDiskStatus(DiskID, &status);
 
   //If the disk is free perform the Read.
-  if(status == DEVICE_FREE){
+  if(status == DEVICE_FREE && (long)CheckDiskQueue(DiskID) == -1){
  
     mmio.Mode = Z502DiskRead;
     mmio.Field1 = DiskID;
@@ -186,7 +186,7 @@ void osDiskWriteRequest(long DiskID, long DiskSector, long DiskAddress){
   
   CheckDiskStatus(DiskID, &status);
 
-  if(status == DEVICE_FREE){
+  if(status == DEVICE_FREE && (long)CheckDiskQueue(DiskID) == -1){
 
     mmio.Mode = Z502DiskWrite;
     mmio.Field1 = DiskID;
@@ -219,11 +219,15 @@ void osCheckDiskRequest(long DiskID, long DiskSector){
 
   long Status;
   MEMORY_MAPPED_IO mmio;
-    
+
+  //start with atomic section
+  LockLocation(DISK_LOCK[DiskID]);
+
+  
   CheckDiskStatus(DiskID, &Status);
 
   //If disk is free proceed with the Check
-  if(Status == DEVICE_FREE){
+  if(Status == DEVICE_FREE && (long)CheckDiskQueue(DiskID) == -1){
 	
     mmio.Mode = Z502CheckDisk;
     mmio.Field1 = DiskID;
@@ -235,6 +239,8 @@ void osCheckDiskRequest(long DiskID, long DiskSector){
   else{
     aprintf("\n\nERROR: Disk %ld is not free. Cannot Check Disk\n\n", DiskID);
   }
+  //done with atomic section
+  UnlockLocation(DISK_LOCK[DiskID]);
 }
 
 
@@ -264,9 +270,11 @@ void HandleDiskInterrupt(long DiskID){
     //Disk.
     if(next_dqe->PID == dqe->PID){
       PutOnReadyQueue = FALSE;
+
     }
     else{
       PutOnReadyQueue = TRUE;
+            aprintf("Next PID, %d, is not the same as current Pid %d\n", next_dqe->PID, dqe->PID);
     }
     
     //Set read or write mode

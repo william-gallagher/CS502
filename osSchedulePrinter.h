@@ -12,12 +12,14 @@ and the variables that track the prints for the different states.
 //Different tests set these numbers to different values
 INT32 SVCPrints;
 INT32 InterruptHandlerPrints;
+INT32 FaultHandlerPrints;
 INT32 SchedulerPrints;
 INT32 MemoryPrints;
 INT32 TestRunning;
 
 
 void osPrintState(char* Action, long TargetPID, long CurrentPID);
+void osPrintMemoryState();
 void PrintSVC(long Arguments[], INT32 call_type);
 void PrintInterrupt(INT32 DeviceID, INT32 Status);
 void SetTestNumber(char TestName[]);

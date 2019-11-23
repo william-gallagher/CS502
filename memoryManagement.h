@@ -1,6 +1,9 @@
 #ifndef MEM_MANAGEMENT_H
 #define MEM_MANAGEMENT_H
 
+#define SWAP_DISK 1
+
+INT16 NextSwapLocation;
 
 void InitializeFrameManager();
 void GetPhysicalFrame(INT16 *Frame, PROCESS_CONTROL_BLOCK *pcb, INT16 PageIndex);

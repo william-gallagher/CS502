@@ -384,6 +384,13 @@ void DeletePCB(long PID){
     pcb->in_use = FREE;
     pcb->priority = 0;
     strcpy(pcb->name, "");
+
+    //Remove frames that the process was using and return to the general pool
+    for(INT32 i=0; i<NUMBER_PHYSICAL_PAGES; i++){
+      if(((FrameManager[i] & 0x00FF0000)>>16) == PID){
+	FrameManager[i] = 0;
+      }
+    }
 }
 
 /*
