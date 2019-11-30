@@ -154,7 +154,6 @@ INT32 DISK_LOCK[MAX_NUMBER_OF_DISKS];
 //Note: The disk queues require a lock for each queue. So dont start
 //using DISK_LOCK_BASE + 1 !!!
 
-
 //Define multiprocessor or uniprocessor
 #define MULTI 1
 #define UNI 0

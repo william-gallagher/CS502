@@ -157,7 +157,7 @@ the dispatcher grabs it and starts the context.
 void dispatcher(){
 
   MEMORY_MAPPED_IO mmio;
- 
+
   while(CheckReadyQueue() == -1){
     CALL(WasteTime());
     //We need a sleep so other thread can get LOCK
@@ -188,6 +188,7 @@ void dispatcher(){
   if(mmio.Field4 != ERR_SUCCESS){
     aprintf("\n\nError: in starting context in dispatcher\n\n");
   }
+
 }
 
 

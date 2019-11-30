@@ -205,6 +205,9 @@ void osPrintMemoryState(){
   MP_FRAME_DATA *Data;
   INT16 PID;
   INT16 LogicalPage;
+  PROCESS_CONTROL_BLOCK *pcb;
+  INT16 *PageTable;
+  
   INT16 State;
   
   for(INT32 i=0; i<NUMBER_PHYSICAL_PAGES; i++){
@@ -228,8 +231,22 @@ void osPrintMemoryState(){
     Data->LogicalPage = LogicalPage;
 
     //Get the state of the Page.
-    //Eventually have to go into the page table. For now just set valide
-    State = FRAME_VALID;
+    pcb = GetPCB(PID);
+    PageTable = pcb->page_table;
+
+    //check valid bit
+    if((PageTable[LogicalPage] & PTBL_VALID_BIT) != 0){
+      State = FRAME_VALID;
+    }
+    //Check Modified Bit
+    if((PageTable[LogicalPage] & PTBL_MODIFIED_BIT) != 0){
+      State = State + FRAME_MODIFIED;
+    }
+     //Check Referenced Bit
+    if((PageTable[LogicalPage] & PTBL_REFERENCED_BIT) != 0){
+      State = State + FRAME_REFERENCED;
+    }
+    
     Data->State = State;
     
   }
@@ -375,7 +392,11 @@ void PrintSVC(long Arguments[], INT32 call_type ){
 
     aprintf("\n\tSVC handler: Close File\n\tClosing File given by Inode %x\n\n", Arguments[0]);    
     break;
+
+  case SYSNUM_DEFINE_SHARED_AREA:
     
+    aprintf("\n\tSVC handler: Define Shared Area\n\tShared area begins at address %x and is %d pages long\n\n", Arguments[0], Arguments[1]);    
+    break;
   default:
       aprintf("\n\tSVC handler: Call Not Recognized.\n\n");
 
@@ -384,6 +405,20 @@ void PrintSVC(long Arguments[], INT32 call_type ){
   //decrement the count of SVCPrints
   SVCPrints--;
 }
+
+/*
+
+*/
+void PrintFault(INT32 DeviceID, INT32 Status){
+
+  if(FaultHandlerPrints <= 0) return;
+
+  aprintf("FaultHandler: Found device ID %d with status %d\n", DeviceID,
+	  Status);
+
+  FaultHandlerPrints--;
+}
+
 
 /*
 A simple function that converts the test name input in the command line
@@ -584,17 +619,29 @@ void SetPrintOptions(INT32 TestRunning) {
     break;
   case 41:
   case 42:
+    SVCPrints = MAX_INT;
+    InterruptHandlerPrints = MAX_INT;
+    FaultHandlerPrints = MAX_INT;
+    SchedulerPrints = 0;
+    MemoryPrints = MAX_INT;
+    break;
   case 43:
+     SVCPrints = 10;
+    InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 10;
+    SchedulerPrints = 0;
+    MemoryPrints = MAX_INT;
+    break;
   case 44:
   case 45:
   case 46:
   case 47:
   case 48:
-    SVCPrints = MAX_INT;
-    InterruptHandlerPrints = MAX_INT;
-    FaultHandlerPrints = MAX_INT;
-    SchedulerPrints = MAX_INT;
-    MemoryPrints = 5;
+    SVCPrints = 10;
+    InterruptHandlerPrints = 10;
+    FaultHandlerPrints = 10;
+    SchedulerPrints = 0;
+    MemoryPrints = 100;
     break;    
   default:
     aprintf("\n\nTest Number Not Recognized\n\n");    

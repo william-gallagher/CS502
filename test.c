@@ -2583,6 +2583,7 @@ void testS(void) {
 
 	ReadWriteData = OurProcessID; // Store PID in our slot
 	MEM_WRITE(MEM_ADJUST(proc_info[ld->OurSharedID].Pid), &ReadWriteData);
+
 	ReadWriteData = 0;         // Initialize this counter
 	MEM_WRITE(MEM_ADJUST(proc_info[ld->OurSharedID].MailboxToMaster),
 			&ReadWriteData);
@@ -2606,6 +2607,7 @@ void testS(void) {
 			// Read the memory of that slave to make sure it's OK
 			MEM_READ(MEM_ADJUST(proc_info[ld->TargetShared].structure_tag),
 					&ReadWriteData);
+
 			if (ReadWriteData != PROC_INFO_STRUCT_TAG) {
 				aprintf("We should see a structure tag, but did not\n");
 				aprintf("This means that this memory is not mapped \n");

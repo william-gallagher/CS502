@@ -22,6 +22,7 @@ void osPrintState(char* Action, long TargetPID, long CurrentPID);
 void osPrintMemoryState();
 void PrintSVC(long Arguments[], INT32 call_type);
 void PrintInterrupt(INT32 DeviceID, INT32 Status);
+void PrintFault(INT32 DeviceID, INT32 Status);
 void SetTestNumber(char TestName[]);
 long GetTestName(char TestName[]);
 void SetPrintOptions(INT32 TestRunning);

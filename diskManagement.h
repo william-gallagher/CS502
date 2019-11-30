@@ -1,7 +1,12 @@
 
 
-unsigned int InodeArray[32];
+#ifndef DISK_MANAGE_H
+#define DISK_MANAGE_H
 
+#define FILE 0
+#define DIR 1
+
+unsigned int InodeArray[MAX_NUMBER_INODES];
 
 
 void osFormatDisk(long DiskID, long *ReturnError);
@@ -15,3 +20,5 @@ void osPrintCurrentDirContents(long *ReturnError);
 void InitializeInodes();
 void GetInode(unsigned char *NewInode);
 DISK_CACHE* CreateDiskCache();
+
+#endif //DISK_MANAGE_H

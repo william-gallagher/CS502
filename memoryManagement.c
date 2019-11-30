@@ -1,7 +1,8 @@
 /*
+memoryManagement.c
 
-
-
+This file holds all the functions that deal with virtual memory, page 
+replacement, and related things.
 */
 
 #include <string.h>
@@ -14,11 +15,15 @@
 #include "memoryManagement.h"
 #include "diskManagement.h"
 #include "diskQueue.h"
-//#include "osSchedulePrinter.h"
 
+/*
+The frame manager tracks which frames are in use. All the elements of the 
+frame manager are set to 0 to indicate none of the frames are in use when
+the OS is started.
+*/
 void InitializeFrameManager(){
 
-  for(INT16 i=0; i<16; i++){
+  for(INT16 i=0; i<NUMBER_PHYSICAL_PAGES; i++){
     FrameManager[i] = 0;
   }
 }
@@ -37,7 +42,7 @@ INT32 CheckOnDisk(INT16 ShadowTableIndex, INT16 *ShadowPageTable){
 
 /*
 Test to see is the page in the logical address has been swapped onto
-at some previous point. This would be indicated by bit 15 being set t0
+at some previous point. This would be indicated by bit 15 being set to
 1 in the shadow page table.
 */
 INT32 CheckPreviouslyOnDisk(INT16 ShadowTableIndex,
@@ -50,23 +55,85 @@ INT32 CheckPreviouslyOnDisk(INT16 ShadowTableIndex,
   return TRUE;
 }
 
+/*
+Simply checks the referenced bit and returns true or false. If the bit is
+set then clear it.
+*/
+void TestReferenceBit(INT16 *PageTableEntry, INT32 *PageReferenced){
+
+  if((*PageTableEntry & PTBL_REFERENCED_BIT) == 0){
+    (*PageReferenced) = FALSE;
+  }
+  else{
+    (*PageReferenced) = TRUE;
+    //set Referenced Bit to 0
+    (*PageTableEntry) = (*PageTableEntry) & (~PTBL_REFERENCED_BIT);
+  }
+}
 
 /*
-All the Frames are full and we need to put the contents of one onto disk
+Used for getting the next frame to check when using LRU approximation
+to find a frame to replace. Resets to 0 when NextFrame is 63. 
+Note: NextFrame is a global variable.
+*/
+void GetNextFrame(){
+
+  if(NextFrame == (NUMBER_PHYSICAL_PAGES-1)){
+    NextFrame = 0;
+  }
+  else{
+    NextFrame++;
+  }
+}
+
+/*
+Use the LRU Approximation algorithm to find a page to replace.
+Look through Frame Manager to find a page that has not been referenced.
+
+Remember: the frame manager is made up of INT32 elements.
+byte 7 is for the in use flag
+bytes 4-6 hold the PID that has the frame
+bytes 0-3 hold the page table index
+*/
+void FindFrameToReplace(){
+
+  INT16 *PageTable;
+  INT16 PageTableIndex;
+  INT16 *PageTableEntry;
+  long FramePID;
+  PROCESS_CONTROL_BLOCK *pcb;
+  INT32 PageReferenced = TRUE;
+
+  //We need to find out which process has the frame and then which
+  //entry in the page table it is.
+  //Then get the page table for that process and check the reference bit.
+  while(PageReferenced == TRUE){
+
+    GetNextFrame();
+    FramePID = (FrameManager[NextFrame]>>16) & 0xFF;
+    PageTableIndex = FrameManager[NextFrame] & 0xFFFF;
+    pcb = GetPCB(FramePID);
+    PageTable = pcb->page_table;
+    PageTableEntry = &PageTable[PageTableIndex];
+
+    TestReferenceBit(PageTableEntry, &PageReferenced);
+  } 
+ }
+  
+/*
+When all the frames are in use we need to put the contents of one onto disk
+and return the freed frame. The page table and the shadow page table of the
+process that had the frame need to be updated as well.
 */
 INT16 FreeUsedFrame(PROCESS_CONTROL_BLOCK *pcb1){
 
-  //get a random frame. Eventually need a better way to do this.
-  INT16 FrameToRemove = NextFrame%64;
-  NextFrame++;
-
-  aprintf("Removing frame %d\n", FrameToRemove);
+  //Use LRU Approximation to get a frame
+  FindFrameToReplace();
+  INT16 FrameToRemove = NextFrame;
   
   INT32 FrameContents = FrameManager[FrameToRemove];
 
   unsigned char FramePID = (FrameContents & 0x00FF0000) >> 16;
-
-  aprintf("Removing a frame that belongs to PID %d\n", FramePID);
 
   PROCESS_CONTROL_BLOCK* pcb = GetPCB((long) FramePID);
 
@@ -76,53 +143,34 @@ INT16 FreeUsedFrame(PROCESS_CONTROL_BLOCK *pcb1){
 
   INT16 PageNumber = FrameContents & 0x00000FFFF;
 
-  aprintf("PID %d is removing a frame in PID %d PCB\n", pcb1->idnum, pcb->idnum);
-
   //Clear the valid bit
-  PageTable[PageNumber] = 0;
-  /*  
-  if(pcb->cache == NULL){
-
-    //chose the Disk that will have the swap area
-    pcb->current_disk = pcb->idnum % MAX_NUMBER_OF_DISKS;
-    //pcb->cache = CreateDiskCache();
-    pcb->cache = malloc(10000000);
-    pcb->next_swap_location = 0x0600;
-
-    //long ReturnError;
-    //osFormatDisk(pcb1->current_disk, &ReturnError);
-    }*/
-  INT16 CacheLine;
+  PageTable[PageNumber] &= (~PTBL_VALID_BIT);
+ 
+  INT16 DiskLocation;
   //Check to see if the logical page has been in the swap space before.
-  //If yes then put it back where it was.
+  //If yes then put it back where it was before.
   if(CheckPreviouslyOnDisk(PageNumber, ShadowPageTable) == FALSE){
-
     
-    CacheLine = NextSwapLocation;
+    DiskLocation = NextSwapLocation;
 
     //fill the shadow page table
     ShadowPageTable[PageNumber] = 0x4000; //set the prev in use bit 
-    // ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + ((FramePID & 0x0F)<<11);
     ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + CacheLine;
     NextSwapLocation++;
 
   }
   else{
 
-    CacheLine = ShadowPageTable[PageNumber] & 0x0FFF;
+    DiskLocation = ShadowPageTable[PageNumber] & 0x0FFF;
   }
 
   ShadowPageTable[PageNumber] |= 0x8000;  //set in use bit
 
-
-  //have to get data from physical memory and put into cache
+  //We have to get data from physical memory and put on the disk
   char DataBuffer[16];
   Z502ReadPhysicalMemory(FrameToRemove, DataBuffer);
-  
-
-  //Really should check modified bit before writing to disk
+ 
   osDiskWriteRequest(SWAP_DISK, CacheLine, (long)DataBuffer);
-
   
   return FrameToRemove;
 }
@@ -177,68 +225,31 @@ INT32 CheckValidBit(INT16 TableEntry){
   //Check to see if valid bit is set
   //Remember PTLB_VALID_BIT is 0x8000
   if(TableEntry & PTBL_VALID_BIT){
-    //aprintf("Checking %d returning true\n", TableEntry);
     return TRUE;
   }
-  //aprintf("Checking %d. Returning false\n", TableEntry);
   return FALSE;
 }
 
-/*
-We need to find a frame for Page Table entry Index
+void InitializeSharedArea(long StartingAddress, long PagesInSharedArea,
+			   char *AreaTag, long *OurSharedID, long
+			  *ReturnError){
 
-void NoFrames(PROCESS_CONTROL_BLOCK *CurrentPCB, INT16 Index){
+  PROCESS_CONTROL_BLOCK *pcb = GetCurrentPCB();
+  INT16 *PageTable = pcb->page_table;
 
-  //First see if the Logical Page is already on the disk somewhere.
-  //This involves checking the Shadow Page Table
-  INT16 *ShadowPageTable  = (INT16 *)CurrentPCB->shadow_page_table;
-  INT16 *PageTable = (INT16 *)CurrentPCB->page_table;
-  long CurrentPID = CurrentPCB->idnum;
+  //Let's make sure the starting address is on a mod 16 boundary
+  if(StartingAddress % PGSIZE != 0){
+    aprintf("\n\nERROR: Shared Area starting address is not mod 16\n\n");
+  }
 
-  //get a random frame
-  INT16 FrameToRemove = random()%64;
-
-  INT32 FrameContents = FrameManager[FrameToRemove];
-
-  unsigned int FramePID = (FrameContents & 0x00FF0000) >> 16;
-  aprintf("Here is the PID %d\n", FramePID);
-
-  INT16 PageNumber = FrameContents & 0x0000FFFF;
-  aprintf("Here is the Page Number associated with the Frame : %d\n", PageNumber);
+  INT16 StartPage = StartingAddress / PGSIZE;
   
-  if(CurrentPCB->cache == NULL){
-    CurrentPCB->cache = CreateDiskCache();
-    CurrentPCB->next_swap_location = 0x600;
+  for(INT32 i=0; i<PagesInSharedArea; i++){
+
+    PageTable[StartPage + i] = (SharedAreaStartFrame + i) + PTBL_VALID_BIT;
   }
 
-  INT16 CacheLine = CurrentPCB->next_swap_location;
-
-  //fill the shadow page table
-  ShadowPageTable[PageNumber] = 0x8000; //set the in use bit
-  ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + ((FramePID & 0x0F)<<11);
-  ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + CacheLine;
-  CurrentPCB->next_swap_location++;
-
-  //have to get data from physical memory and put into cache
-  char DataBuffer[16];
-  Z502ReadPhysicalMemory(FrameToRemove, DataBuffer);
-
-  for(int i=0; i<16; i++){
-    aprintf("%x ", DataBuffer[i]);
-  }
-
-  //copy to cache
-  for(int i=0; i<16; i++){
-    CurrentPCB->cache->Block[CacheLine].Byte[i] = DataBuffer[i];
-  }
-
-  //update page table
-  PageTable[Index] =  FrameToRemove;
-
-
-  //update Frame Manager
-  FrameManager[FrameToRemove] = FrameManager[FrameToRemove] + (CurrentPID & 0x00ff0000);
-  FrameManager[FrameToRemove] = FrameManager[FrameToRemove] + Index;
-
+  (*OurSharedID) = SharedIDCount;
+  SharedIDCount++;
+  (*ReturnError) = ERR_SUCCESS;
 }
-*/

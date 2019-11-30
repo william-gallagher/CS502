@@ -122,8 +122,6 @@ void FaultHandler(void) {
   INT32 Status;
   MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
 
-  static BOOL remove_this_from_your_fault_code = TRUE; 
-  static INT32 how_many_fault_entries = 0; 
 
   // Get cause of fault
   mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
@@ -132,64 +130,52 @@ void FaultHandler(void) {
   DeviceID = mmio.Field1;
   Status   = mmio.Field2;
 
-  // This causes a print of the first few faults - and then stops printing!
-  // You can adjust this as you wish.  BUT this code as written here gives
-  // an indication of what's happening but then stops printing for long tests
-  // thus limiting the output.
-  how_many_fault_entries++; 
-  if (remove_this_from_your_fault_code && (how_many_fault_entries < 100000)) {
-    for(int i=0; i<100000; i++);
-    aprintf("FaultHandler: Found device ID %d with status %d\n",
-	    (int) mmio.Field1, (int) mmio.Field2);
+  PrintFault(DeviceID, Status);
+  // for(int i=0; i<100000; i++);
+ 
+  //get the current page table
+  PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
 
-    osPrintMemoryState();
+  INT16 *PageTable = (INT16 *)CurrentPCB->page_table;
+  INT16 *ShadowPageTable = (INT16 *)CurrentPCB->shadow_page_table;
+  INT16 Index = (INT16) mmio.Field2;
 
-    //get the current page table
-    PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
-    long PID = CurrentPCB->idnum;
+  //If Valid bit is set and we are here then the user program has
+  //asked for an address that is not on a mod 4 boundary.
+  //Just terminate the program.
+  if(CheckValidBit(PageTable[Index]) == TRUE){
 
-    INT16 *PageTable = (INT16 *)CurrentPCB->page_table;
-    INT16 *ShadowPageTable = (INT16 *)CurrentPCB->shadow_page_table;
-    INT16 Index = (INT16) mmio.Field2;
+    aprintf("\n\nERROR: Bad Address. Terminate Program\n\n");
+    long ReturnError;
+    osTerminateProcess(-1, &ReturnError);  
+  }
 
-    //If Valid bit is set and we are here then the user program has
-    //asked for an address that is not on a mod 4 boundary.
-    //Just terminate the program.
-    if(CheckValidBit(PageTable[Index]) == TRUE){
+  //There are two possibilities. The valid bit is not set because the
+  //logical page has never been used or because the page is backed by data
+  //in the swap space.
 
-      aprintf("\n\nERROR: Bad Address. Terminate Program\n\n");
-      long ReturnError;
-      osTerminateProcess(-1, &ReturnError);  
-    }
-
-    //There are two possibilities. The valid bit is not set because the
-    //logical page has never been used or because the page is backed by data
-    //in the swap space.
-
-    INT32 OnDisk = CheckOnDisk(Index, ShadowPageTable);
+  INT32 OnDisk = CheckOnDisk(Index, ShadowPageTable);
 
        
-    GetPhysicalFrame(&PageTable[Index], CurrentPCB, Index);
-    SetValidBit(&PageTable[Index]);
+  GetPhysicalFrame(&PageTable[Index], CurrentPCB, Index);
+  SetValidBit(&PageTable[Index]);
 
-    if(OnDisk == TRUE){
+  if(OnDisk == TRUE){
 
-      INT16 CacheLine = ShadowPageTable[Index] & 0x0FFF;
+    INT16 CacheLine = ShadowPageTable[Index] & 0x0FFF;
 
-      char DataBuffer[16];
+    char DataBuffer[16];
 
-      aprintf("In base.c. PID %d is reading for disk %d\n", CurrentPCB->idnum, SWAP_DISK);
+    // aprintf("In base.c. PID %d is reading for disk %d\n", CurrentPCB->idnum, SWAP_DISK);
      
-      osDiskReadRequest(SWAP_DISK, CacheLine, (long)DataBuffer);
+    osDiskReadRequest(SWAP_DISK, CacheLine, (long)DataBuffer);
       
-      INT16 Frame = (PageTable[Index] & 0x0FFF);
-      Z502WritePhysicalMemory(Frame, DataBuffer);
+    INT16 Frame = (PageTable[Index] & 0x0FFF);
+    Z502WritePhysicalMemory(Frame, DataBuffer);
 
-      ShadowPageTable[Index] &= 0x7FFF;
-    }
-
-    
-  }
+    ShadowPageTable[Index] &= 0x7FFF;
+   }
+  osPrintMemoryState();
     
 } // End of FaultHandler
 
@@ -243,7 +229,12 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
   long Inode;
   long Index;
   char *WriteBuffer;
-    
+
+  long StartingAddress;
+  long PagesInSharedArea;
+  char *AreaTag;
+  long *OurSharedID;
+  
     switch(call_type){
       
     case SYSNUM_GET_TIME_OF_DAY:
@@ -416,7 +407,17 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       ReturnError = (long *)SystemCallData->Argument[0];
       osPrintCurrentDirContents(ReturnError);
       break;
+    
+    case SYSNUM_DEFINE_SHARED_AREA:
+      StartingAddress = (long)SystemCallData->Argument[0];
+      PagesInSharedArea = (long)SystemCallData->Argument[1];
+      AreaTag = (char *)SystemCallData->Argument[2];
+      OurSharedID = (long *)SystemCallData->Argument[3];
+      ReturnError = (long *)SystemCallData->Argument[4];
+      InitializeSharedArea(StartingAddress, PagesInSharedArea, AreaTag,
+			   OurSharedID, ReturnError);
       
+      break;
     }
 }           // End of SVC
 
@@ -504,6 +505,9 @@ void osInit(int argc, char *argv[]) {
     NextFrame = 0;
     NextSwapLocation = 0x600;
     Cache = NULL;
+
+    //for shared memory
+    SharedIDCount = 0;
 
     for(int i=0; i<MAX_NUMBER_OF_DISKS; i++){
       CreateDiskQueue(i);

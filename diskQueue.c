@@ -274,7 +274,6 @@ void HandleDiskInterrupt(long DiskID){
     }
     else{
       PutOnReadyQueue = TRUE;
-            aprintf("Next PID, %d, is not the same as current Pid %d\n", next_dqe->PID, dqe->PID);
     }
     
     //Set read or write mode
