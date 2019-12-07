@@ -2,7 +2,7 @@
 memoryManagement.h 
 
 This file includes the prototypes and globals that deal with memory
-management.
+management. It also includes functions for handling the Fault Handler.
 */
 
 #ifndef MEM_MANAGEMENT_H
@@ -27,6 +27,7 @@ INT32 CheckOnDisk(INT16 ShadowTableIndex, INT16 *ShadowPageTable);
 void InitializeSharedArea(long StartingAddress, long PagesInSharedArea,
 			   char *AreaTag, long *OurSharedID, long
 			  *ReturnError);
+void HandleFaultHandler(INT32 DeviceID, INT32 Status);
 
 
 #endif //MEM_MANAGEMENT_H

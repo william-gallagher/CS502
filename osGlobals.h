@@ -8,8 +8,6 @@ This include file has all the OS wide structs and defines.
 #ifndef OS_GLOBAL_H
 #define OS_GLOBAL_H
 
-#define MAX_INT ((UINT32)~0 >> 1)
-
 //Some OS wide limits
 #define MAXPROCESSES 15
 #define MAX_MESSAGE_LENGTH 500
@@ -30,19 +28,6 @@ This include file has all the OS wide structs and defines.
 #define FREE 0
 #define IN_USE 1
 
-struct{
-
-  unsigned char inode;
-  char name[7];
-  unsigned char creation_time2;
-  unsigned char creation_time1;
-  unsigned char creation_time0;
-  unsigned char file_description; //maybe break up into fields?
-  unsigned short index_location;
-  unsigned short file_size;
-} typedef FILE_HEADER;
-
-//define
 struct{
   unsigned char Byte[16];
 } typedef DISK_BLOCK;
@@ -68,15 +53,10 @@ typedef struct{
   void* queue_ptr;
   long current_disk;
   DISK_BLOCK *current_directory;
-  DISK_BLOCK *current_index; ///Not used right now???
   unsigned int open_file_inode;
   DISK_BLOCK *open_file;
-  DISK_CACHE *cache;
   void* page_table;
   void* shadow_page_table;
-
-  //maybe remove later
-  INT16 next_swap_location;
   
 } PROCESS_CONTROL_BLOCK;
 
@@ -161,10 +141,12 @@ INT32 DISK_LOCK[MAX_NUMBER_OF_DISKS];
 //Multiprocessor Flag
 INT32 M;
 
+/*
+Global Frame Manager
+*/
 INT32 FrameManager[NUMBER_PHYSICAL_PAGES];
-
-
-//temp thing
 INT32 NextFrame;
+
+#define MAX_INT ((UINT32)~0 >> 1)
 
 #endif //OS_GLOBAL_H

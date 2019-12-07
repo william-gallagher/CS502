@@ -194,7 +194,6 @@ void test3(void) {
 	DataWritten->int_data[1] = CheckValue;
 	DataWritten->int_data[2] = Sector;
 	DataWritten->int_data[3] = OurProcessID;
-
 	GET_TIME_OF_DAY(&Time1);
 	PHYSICAL_DISK_WRITE(DiskID, Sector, (char* )(DataWritten->char_data));
 	GET_TIME_OF_DAY(&Time2);
@@ -222,8 +221,7 @@ void test3(void) {
 	// It is implemented in svc simply by calling the hardware function.
 	// There will be a file produced that shows what is physically
 	//    on your disk.
-	
-CHECK_DISK(DiskID, &ErrorReturned);
+	CHECK_DISK(DiskID, &ErrorReturned);
 	TERMINATE_PROCESS(-1, &ErrorReturned);
 	aprintf("ERROR: Test should be terminated but isn't.\n");
 }          // End of test3
@@ -348,10 +346,7 @@ void test5(void) {
 	// process has terminated.
 	ErrorReturned = ERR_SUCCESS;
 	while (ErrorReturned == ERR_SUCCESS) {
-	//for(int i=0; i<5; i++){	
 		SLEEP(SleepTime);
-		GET_TIME_OF_DAY(&CurrentTime);
-		aprintf("Woke from sleep at %ld\n\n", CurrentTime);
 		GET_PROCESS_ID("testX", &ProcessID, &ErrorReturned);
 	}
 	GET_TIME_OF_DAY(&CurrentTime);
@@ -393,8 +388,6 @@ void test6(void) {
 	CREATE_PROCESS("test6_a", testX, LEGAL_PRIORITY_6, &TargetProcessID,
 			&ErrorReturned);
 	SuccessExpected(ErrorReturned, "CREATE_PROCESS");
-
-	aprintf("The PID of the newly create processes is %ld\n", TargetProcessID);
 
 	// Try to Suspend an Illegal PID
 	SUSPEND_PROCESS((INT32 )9999, &ErrorReturned);
@@ -2142,7 +2135,6 @@ void test43(void) {
  **************************************************************************/
 
 #define                 LOOP_COUNT                    4000
-
 #define                 DISPLAY_GRANULARITY44          200
 #define                 LOGICAL_PAGES_TO_TOUCH       6 * NUMBER_PHYSICAL_PAGES
 
@@ -2174,7 +2166,6 @@ void test44(void) {
 	for (Index = 0; Index < LOOP_COUNT; Index++) // Bugfix Rel 4.03  12/1/2013
 		mtr->page_touched[Index] = 0;
 	for (Loops = 0; Loops < LOOP_COUNT; Loops++) {
-
 		// Get a random page number
 		GetSkewedRandomNumber(&PageNumber, OurProcessID, LOGICAL_PAGES_TO_TOUCH);
 		MemoryAddress = PGSIZE * PageNumber; // Convert page to address
@@ -2583,7 +2574,6 @@ void testS(void) {
 
 	ReadWriteData = OurProcessID; // Store PID in our slot
 	MEM_WRITE(MEM_ADJUST(proc_info[ld->OurSharedID].Pid), &ReadWriteData);
-
 	ReadWriteData = 0;         // Initialize this counter
 	MEM_WRITE(MEM_ADJUST(proc_info[ld->OurSharedID].MailboxToMaster),
 			&ReadWriteData);
@@ -2607,7 +2597,6 @@ void testS(void) {
 			// Read the memory of that slave to make sure it's OK
 			MEM_READ(MEM_ADJUST(proc_info[ld->TargetShared].structure_tag),
 					&ReadWriteData);
-
 			if (ReadWriteData != PROC_INFO_STRUCT_TAG) {
 				aprintf("We should see a structure tag, but did not\n");
 				aprintf("This means that this memory is not mapped \n");

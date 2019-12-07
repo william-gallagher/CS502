@@ -215,7 +215,7 @@ This function uses the CheckDisk primitive to see the contents of a
 disk. Note that it does not seem to cause an interrupt. It just gets 
 the contents and returns.
 */
-void osCheckDiskRequest(long DiskID, long DiskSector){
+void osCheckDiskRequest(long DiskID, long *ReturnError){
 
   long Status;
   MEMORY_MAPPED_IO mmio;
@@ -241,6 +241,8 @@ void osCheckDiskRequest(long DiskID, long DiskSector){
   }
   //done with atomic section
   UnlockLocation(DISK_LOCK[DiskID]);
+
+  (*ReturnError) = ERR_SUCCESS;
 }
 
 

@@ -2,8 +2,9 @@
 osSchedulerPrinter.c
 
 This file holds the functions that set up the State Printer. It also
-holds the PrintSVC() and the PrintInterrupt() which print out the status
-of the SVC and Interrupt when enabled.
+holds the PrintSVC() and the PrintInterrupt() and the PrintFaultHandler()
+which print out the status of the SVC and Interrupt and Fault Handler
+when enabled.
 */
 
 #include <string.h>

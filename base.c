@@ -122,7 +122,6 @@ void FaultHandler(void) {
   INT32 Status;
   MEMORY_MAPPED_IO mmio;       // Enables communication with hardware
 
-
   // Get cause of fault
   mmio.Field1 = mmio.Field2 = mmio.Field3 = 0;
   mmio.Mode = Z502GetInterruptInfo;
@@ -130,52 +129,7 @@ void FaultHandler(void) {
   DeviceID = mmio.Field1;
   Status   = mmio.Field2;
 
-  PrintFault(DeviceID, Status);
-  // for(int i=0; i<100000; i++);
- 
-  //get the current page table
-  PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
-
-  INT16 *PageTable = (INT16 *)CurrentPCB->page_table;
-  INT16 *ShadowPageTable = (INT16 *)CurrentPCB->shadow_page_table;
-  INT16 Index = (INT16) mmio.Field2;
-
-  //If Valid bit is set and we are here then the user program has
-  //asked for an address that is not on a mod 4 boundary.
-  //Just terminate the program.
-  if(CheckValidBit(PageTable[Index]) == TRUE){
-
-    aprintf("\n\nERROR: Bad Address. Terminate Program\n\n");
-    long ReturnError;
-    osTerminateProcess(-1, &ReturnError);  
-  }
-
-  //There are two possibilities. The valid bit is not set because the
-  //logical page has never been used or because the page is backed by data
-  //in the swap space.
-
-  INT32 OnDisk = CheckOnDisk(Index, ShadowPageTable);
-
-       
-  GetPhysicalFrame(&PageTable[Index], CurrentPCB, Index);
-  SetValidBit(&PageTable[Index]);
-
-  if(OnDisk == TRUE){
-
-    INT16 CacheLine = ShadowPageTable[Index] & 0x0FFF;
-
-    char DataBuffer[16];
-
-    // aprintf("In base.c. PID %d is reading for disk %d\n", CurrentPCB->idnum, SWAP_DISK);
-     
-    osDiskReadRequest(SWAP_DISK, CacheLine, (long)DataBuffer);
-      
-    INT16 Frame = (PageTable[Index] & 0x0FFF);
-    Z502WritePhysicalMemory(Frame, DataBuffer);
-
-    ShadowPageTable[Index] &= 0x7FFF;
-   }
-  osPrintMemoryState();
+  HandleFaultHandler(DeviceID, Status); 
     
 } // End of FaultHandler
 
@@ -282,8 +236,8 @@ void svc(SYSTEM_CALL_DATA *SystemCallData) {
       
     case SYSNUM_CHECK_DISK:
       DiskID = (long)SystemCallData->Argument[0];
-      DiskSector = (long)SystemCallData->Argument[1];
-      osCheckDiskRequest(DiskID, DiskSector);
+      ReturnError = (long *)SystemCallData->Argument[1];
+      osCheckDiskRequest(DiskID, ReturnError);
       break;
 
     case SYSNUM_CREATE_PROCESS:
@@ -466,7 +420,8 @@ void osInit(int argc, char *argv[]) {
     } else {
         aprintf("Simulation is running as a UniProcessor\n");
         aprintf("Add an 'M' to the command line to invoke multiprocessor operation.\n\n");
-
+	
+	//Indicate uniprocessor mode
 	M = UNI;
     }
 

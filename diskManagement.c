@@ -7,7 +7,6 @@ on the disk.
 
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include "protos.h"
 #include "process.h"
 #include "readyQueue.h"
@@ -729,15 +728,7 @@ process.
 */
 DISK_BLOCK* osCreateFile(char *FileName, long *ReturnError,
 			INT32 FileOrDir){
-  /*
-  if(FileOrDir == DIR)
-    aprintf("Create a Directory with %s name\n", FileName);
-
-  if(FileOrDir == FILE)
-    aprintf("Create a File with %s name\n", FileName);
-  */
-  long CurrentPID = GetCurrentPID();
-  long CurrentContext = osGetCurrentContext();
+ 
   PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
 
   long DiskID = CurrentPCB->current_disk;

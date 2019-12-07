@@ -15,6 +15,7 @@ replacement, and related things.
 #include "memoryManagement.h"
 #include "diskManagement.h"
 #include "diskQueue.h"
+#include "osSchedulePrinter.h"
 
 /*
 The frame manager tracks which frames are in use. All the elements of the 
@@ -155,7 +156,7 @@ INT16 FreeUsedFrame(PROCESS_CONTROL_BLOCK *pcb1){
 
     //fill the shadow page table
     ShadowPageTable[PageNumber] = 0x4000; //set the prev in use bit 
-    ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + CacheLine;
+    ShadowPageTable[PageNumber] = ShadowPageTable[PageNumber] + DiskLocation;
     NextSwapLocation++;
 
   }
@@ -170,7 +171,7 @@ INT16 FreeUsedFrame(PROCESS_CONTROL_BLOCK *pcb1){
   char DataBuffer[16];
   Z502ReadPhysicalMemory(FrameToRemove, DataBuffer);
  
-  osDiskWriteRequest(SWAP_DISK, CacheLine, (long)DataBuffer);
+  osDiskWriteRequest(SWAP_DISK, DiskLocation, (long)DataBuffer);
   
   return FrameToRemove;
 }
@@ -230,6 +231,9 @@ INT32 CheckValidBit(INT16 TableEntry){
   return FALSE;
 }
 
+/*
+Handle the shared area tests.
+*/
 void InitializeSharedArea(long StartingAddress, long PagesInSharedArea,
 			   char *AreaTag, long *OurSharedID, long
 			  *ReturnError){
@@ -240,10 +244,13 @@ void InitializeSharedArea(long StartingAddress, long PagesInSharedArea,
   //Let's make sure the starting address is on a mod 16 boundary
   if(StartingAddress % PGSIZE != 0){
     aprintf("\n\nERROR: Shared Area starting address is not mod 16\n\n");
+    (*ReturnError) = ERR_BAD_PARAM;
+    return;
   }
 
   INT16 StartPage = StartingAddress / PGSIZE;
-  
+
+  //Get frames for all the share pages starting at SharedAreaStartFrame
   for(INT32 i=0; i<PagesInSharedArea; i++){
 
     PageTable[StartPage + i] = (SharedAreaStartFrame + i) + PTBL_VALID_BIT;
@@ -252,4 +259,58 @@ void InitializeSharedArea(long StartingAddress, long PagesInSharedArea,
   (*OurSharedID) = SharedIDCount;
   SharedIDCount++;
   (*ReturnError) = ERR_SUCCESS;
+}
+
+/*
+Handle the Interrupt Handler. Usually this is finding a frame to back the
+requested memory page. If the request does not align on a mod 4 boundary
+terminate the program.
+*/
+void HandleFaultHandler(INT32 DeviceID, INT32 Status){
+   PrintFault(DeviceID, Status);
+ 
+  //get the current page table
+  PROCESS_CONTROL_BLOCK *CurrentPCB = GetCurrentPCB();
+
+  INT16 *PageTable = (INT16 *)CurrentPCB->page_table;
+  INT16 *ShadowPageTable = (INT16 *)CurrentPCB->shadow_page_table;
+  INT16 Index = (INT16) Status;
+
+  //If Valid bit is set and we are here then the user program has
+  //asked for an address that is not on a mod 4 boundary.
+  //Just terminate the program.
+  if(CheckValidBit(PageTable[Index]) == TRUE){
+
+    aprintf("\n\nERROR: Bad Address. Terminate Program\n\n");
+    long ReturnError;
+    osTerminateProcess(-1, &ReturnError);  
+  }
+
+  //There are two possibilities. The valid bit is not set because the
+  //logical page has never been used or because the page is backed by data
+  //in the swap space.
+  INT32 OnDisk = CheckOnDisk(Index, ShadowPageTable);
+
+  GetPhysicalFrame(&PageTable[Index], CurrentPCB, Index);
+
+  SetValidBit(&PageTable[Index]);
+
+  //If the data was on the disk we need to get the disk sector from the
+  //shadow page table.
+  if(OnDisk == TRUE){
+
+    INT16 DiskSector = ShadowPageTable[Index] & 0x0FFF;
+
+    char DataBuffer[16];
+
+    osDiskReadRequest(SWAP_DISK, DiskSector, (long)DataBuffer);
+
+    //Put data from disk into proper memory address
+    INT16 Frame = (PageTable[Index] & 0x0FFF);
+    Z502WritePhysicalMemory(Frame, DataBuffer);
+
+    //Indicate data can be found in memory rather than on disk
+    ShadowPageTable[Index] &= 0x7FFF;
+   }
+  osPrintMemoryState();
 }
